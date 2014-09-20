@@ -54,7 +54,7 @@ second (version) string.
 
 #### Type: Bug label
 
-Assign the Type: Bug label to the issue
+Assign the `Type: Bug` label to the issue
 (see [GitHub Help](https://help.github.com/articles/applying-labels-to-issues-and-pull-requests) for details).
 
 #### Priority label
@@ -73,4 +73,4 @@ Then describe the bug in the comment fields.
 
 #### Type: Feature label
 
-Assign the `Type: Feature label` to the issue, then describe the feature request in comment fields.
+Assign the `Type: Feature` label to the issue, then describe the feature request in comment fields.
