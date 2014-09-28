@@ -39,8 +39,8 @@
 LIBS = ../unittest/libut.a -L../../debug -luuid -pthread
 STATIC_DEBUG_LIBS = ../unittest/libut.a ../../debug/libpmem.a -luuid -pthread
 STATIC_NONDEBUG_LIBS = ../unittest/libut.a ../../nondebug/libpmem.a -luuid -pthread
-STATIC_DEBUG_LIBS_DEPS = ../unittest/libut.a ../../debug/libpmem.a ../../debug/libvmem.a
-STATIC_NONDEBUG_LIBS_DEPS = ../unittest/libut.a ../../nondebug/libpmem.a ../../nondebug/libvmem.a
+STATIC_DEBUG_LIBS_DEPS = ../unittest/libut.a ../../debug/libpmem.a
+STATIC_NONDEBUG_LIBS_DEPS = ../unittest/libut.a ../../nondebug/libpmem.a
 INCS = -I../unittest -I../../include
 CFLAGS = -ggdb -Wall -Werror -std=gnu99
 TARGET_STATIC_DEBUG=$(TARGET).static-debug

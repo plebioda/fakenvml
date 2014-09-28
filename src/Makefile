@@ -31,32 +31,17 @@
 #
 
 #
-# src/Makefile -- build the NVM Library
+# src/Makefile -- build the fake libpmem
 #
 VARIANTS = debug nondebug
-.NOTPARALLEL: $(VARIANTS)
-JEMALLOC_DIR = $(CURDIR)/jemalloc
-export JEMALLOC_DIR
 
-HEADERS_DESTDIR = $(DESTDIR)/usr/include
-HEADERS_INSTALL = include/libpmem.h include/libvmem.h
-
-SCOPEFILES = *.[ch] include/*.[ch] jemalloc/src/*.[ch]\
-	     $(JEMALLOC_DIR)/include/jemalloc/*.h\
-	     $(JEMALLOC_DIR)/include/jemalloc/internal/*.h\
-	     $(JEMALLOC_DIR)/debug/include/jemalloc/*.h\
-	     $(JEMALLOC_DIR)/debug/include/jemalloc/internal/*.h\
-	     $(JEMALLOC_DIR)/nondebug/include/jemalloc/*.h\
-	     $(JEMALLOC_DIR)/nondebug/include/jemalloc/internal/*.h
+SCOPEFILES = *.[ch] include/*.[ch]
 
 all     : TARGET = all
 clean   : TARGET = clean
 clobber : TARGET = clobber
-jeconfig: TARGET = jeconfig
-jemalloc: TARGET = jemalloc
-install : TARGET = install
 
-all jeconfig jemalloc clean clobber install: $(VARIANTS)
+all clean clobber: $(VARIANTS)
 
 $(VARIANTS):
 	$(MAKE) -C $@ $(TARGET)
@@ -70,11 +55,9 @@ clobber:
 
 test: $(VARIANTS)
 	$(MAKE) -C test all
-	$(MAKE) -C nondebug jemalloc-tests
 
 check: test
 	cd test && ./RUNTESTS
-	$(MAKE) -C nondebug jemalloc-check
 
 cscope:
 	cscope -q -b $(SCOPEFILES)
@@ -84,8 +67,4 @@ cstyle:
 	../utils/cstyle -pP *.[ch] include/*.[ch]
 	$(MAKE) -C test cstyle
 
-install:
-	install -d $(HEADERS_DESTDIR)
-	install -p -m 0644 $(HEADERS_INSTALL) $(HEADERS_DESTDIR)
-
-.PHONY: all jeconfig jemalloc clean clobber test check cscope cstyle install $(VARIANTS)
+.PHONY: all clean clobber test check cscope cstyle $(VARIANTS)
