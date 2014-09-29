@@ -50,3 +50,20 @@ struct pmemtrn {
 	void *addr;		/* mapped region */
 	size_t size;		/* size of mapped region */
 };
+
+/* the PMEMoid, opaque outside of the library */
+struct pmemoid {
+	uint64_t pool;		/* random or hash of filename? */
+	uint64_t off;		/* offset of struct pmemoid_header */
+};
+
+/* alignment of every object */
+#define	PMEMOID_INTERNAL_ALIGN 256
+
+/* info kept by the library for each allocated object */
+struct pmemoid_header {
+	uint64_t size;		/* requested object size */
+	uint64_t actual_size;	/* actual object size */
+	uint64_t flags;
+	uint64_t unused[5];
+};

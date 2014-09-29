@@ -54,11 +54,13 @@ extern "C" {
 
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <setjmp.h>
 
 /*
  * opaque types internal to libpmem...
  */
 typedef struct pmemtrn PMEMtrn;
+typedef struct pmemoid PMEMoid;	/* object IDs used with pmemtrn */
 typedef struct pmemblk PMEMblk;
 typedef struct pmemlog PMEMlog;
 
@@ -78,25 +80,42 @@ void pmem_drain(void);
 #define	PMEMTRN_MIN_POOL ((size_t)(1024 * 1024 * 2)) /* min pool size: 2MB */
 PMEMtrn *pmemtrn_map(int fd);
 void pmemtrn_unmap(PMEMtrn *ptp);
-void *pmemtrn_static_area(PMEMtrn *ptp);
+int pmemtrn_check(const char *path);
+void *pmemoid_direct(PMEMoid oid);
+void *pmemoid_direct_ntx(PMEMoid oid);
+void *pmemoid_root_direct(PMEMtrn *ptp);
+int pmemoid_nulloid(PMEMoid oid);
 int pmemtrn_begin(PMEMtrn *ptp);
-int pmemtrn_commit(PMEMtrn *ptp, int tid);
-int pmemtrn_abort(PMEMtrn *ptp, int tid);
-void *pmemtrn_malloc(PMEMtrn *ptp, size_t size);
-void pmemtrn_free(PMEMtrn *ptp, void *ptr);
-void *pmemtrn_calloc(PMEMtrn *ptp, size_t nmemb, size_t size);
-void *pmemtrn_realloc(PMEMtrn *ptp, void *ptr, size_t size);
-void *pmemtrn_aligned_alloc(PMEMtrn *ptp, size_t alignment, size_t size);
-char *pmemtrn_strdup(PMEMtrn *ptp, const char *s);
-void *pmemtrn_alloc(PMEMtrn *ptp, void *oldptr, size_t alignment, int zeroed,
-		int tag, size_t size);
-void pmemtrn_set(PMEMtrn *ptp, void *pmem_dest, const void *src, size_t n);
-void pmemtrn_set_ptr(PMEMtrn *ptp, void *pmem_dest, const void *src);
-void *pmemtrn_ptr(PMEMtrn *ptp, void *pmem_src);
-void pmemtrn_strncpy(PMEMtrn *ptp, char *pmem_dest, const char *src, size_t n);
-void pmemtrn_walk(PMEMtrn *ptp,
-		void (*cb)(const void *ptr, int tag, void *arg), void *arg);
-PMEMtrn *pmemtrn_map_replicant(PMEMtrn *ptp, int fd);
+int pmemtrn_begin_mutex(PMEMtrn *ptp, pthread_mutex_t *mutexp);
+int pmemtrn_begin_rwlock(PMEMtrn *ptp, pthread_rwlock_t *rwlockp);
+int pmemtrn_begin_jmp(PMEMtrn *ptp, jmp_buf env);
+int pmemtrn_commit(int tid);
+int pmemtrn_abort(int tid);
+PMEMoid pmemtrn_alloc(int tid, size_t size);
+void pmemtrn_free(int tid, PMEMoid oid);
+int pmemoid_set(int tid, PMEMoid oid, off_t off, const void *src, size_t n);
+
+/*
+ * parts of the pmemtrn API are macros and inlines...
+ */
+
+#define	PMEMOID_DIRECT(type, oid) ((type)pmemoid_direct(oid))
+#define	PMEMOID_DIRECT_NTX(type, oid) ((type)pmemoid_direct_ntx(oid))
+#define	PMEMOID_ROOT_DIRECT(type, ptp) ((type)pmemoid_root_direct(ptp))
+#define	PMEMOID_SET_FIELD(tid, oid, type, field, valuep, size)\
+	pmemoid_set(tid, oid, offsetof(type, field), (void *)(value), size);
+
+inline int
+pmemtrn_set_int(int tid, void *dst, int srcint)
+{
+	return pmemtrn_set(tid, dst, &srcint, sizeof (srcint));
+}
+
+inline int
+pmemtrn_set_oid(int tid, void *dst, PMEMoid srcoid)
+{
+	return pmemtrn_set(tid, dst, &srcoid, sizeof (srcoid));
+}
 
 /*
  * support for arrays of atomically-writable blocks...

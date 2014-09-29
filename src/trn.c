@@ -203,3 +203,119 @@ pmemtrn_check(const char *path)
 	/* XXX stub */
 	return 0;
 }
+
+
+/*
+ * pmemoid_direct -- return a direct access pointer
+ */
+void *
+pmemoid_direct(PMEMoid oid)
+{
+}
+
+/*
+ * pmemoid_direct_ntx -- direct access pointer, for non-transactional use
+ */
+void *
+pmemoid_direct_ntx(PMEMoid oid)
+{
+}
+
+/*
+ * pmemoid_root_direct -- return a direct access pointer to the root object
+ */
+void *
+pmemoid_root_direct(PMEMtrn *ptp)
+{
+}
+
+/*
+ * pmemoid_nulloid -- true is oid is the NULL object
+ */
+int
+pmemoid_nulloid(PMEMoid oid)
+{
+}
+
+/*
+ * pmemtrn_begin -- begin a transaction on a memory pool
+ *
+ * Returns a transaction ID (a small integer value).
+ */
+int
+pmemtrn_begin(PMEMtrn *ptp)
+{
+}
+
+/*
+ * pmemtrn_begin_mutex -- begin a transaction with mutex held
+ */
+int
+pmemtrn_begin_mutex(PMEMtrn *ptp, pthread_mutex_t *mutexp)
+{
+}
+
+/*
+ * pmemtrn_begin_rwlock -- begin a transaction with wrlock help
+ */
+int
+pmemtrn_begin_rwlock(PMEMtrn *ptp, pthread_rwlock_t *rwlockp)
+{
+}
+
+/*
+ * pmemtrn_begin_jmp -- begin a transaction that longjmps on error
+ *
+ * The longjmp happens after the transaction auto-aborts.
+ */
+int
+pmemtrn_begin_jmp(PMEMtrn *ptp, jmp_buf env)
+{
+}
+
+/*
+ * pmemtrn_commit -- commit a transaction
+ */
+int
+pmemtrn_commit(int tid)
+{
+}
+
+/*
+ * pmemtrn_abort -- abort a transaction
+ *
+ * If the transaction was started using pmemtrn_begin_mutex() or
+ * pmemtrn_begin_rwlock(), the locks are dropped automatically when
+ * the transaction is aborted.
+ *
+ * If the transaction was started using pmemtrn_begin_jmp(), the
+ * longjmp is taken after the transaction is aborted.
+ */
+int
+pmemtrn_abort(int tid)
+{
+}
+
+/*
+ * pmemtrn_alloc -- allocate an object
+ */
+PMEMoid
+pmemtrn_alloc(int tid, size_t size)
+{
+}
+
+/*
+ * pmemtrn_free -- free an object
+ */
+void
+pmemtrn_free(int tid, PMEMoid oid)
+{
+}
+
+/*
+ * pmemoid_set -- write to an object at a given offset, keeping an undo log
+ */
+int
+pmemoid_set(int tid, PMEMoid oid, off_t off, const void *src, size_t n)
+{
+}
