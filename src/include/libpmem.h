@@ -59,10 +59,17 @@ extern "C" {
 /*
  * opaque types internal to libpmem...
  */
-typedef struct pmemtrn PMEMtrn;
-typedef struct pmemoid PMEMoid;	/* object IDs used with pmemtrn */
+typedef struct pmemobjs PMEMobjs;
 typedef struct pmemblk PMEMblk;
 typedef struct pmemlog PMEMlog;
+
+/*
+ * Object IDs used with pmemobjs...
+ */
+typedef struct pmemoid {
+	uint64_t pool;
+	uint64_t off;
+} PMEMoid;
 
 /*
  * basic PMEM flush-to-durability support...
@@ -77,45 +84,31 @@ void pmem_drain(void);
 /*
  * support for memory allocation and transactions in PMEM...
  */
-#define	PMEMTRN_MIN_POOL ((size_t)(1024 * 1024 * 2)) /* min pool size: 2MB */
-PMEMtrn *pmemtrn_map(int fd);
-void pmemtrn_unmap(PMEMtrn *ptp);
-int pmemtrn_check(const char *path);
-void *pmemoid_direct(PMEMoid oid);
-void *pmemoid_direct_ntx(PMEMoid oid);
-void *pmemoid_root_direct(PMEMtrn *ptp);
-int pmemoid_nulloid(PMEMoid oid);
-int pmemtrn_begin(PMEMtrn *ptp);
-int pmemtrn_begin_mutex(PMEMtrn *ptp, pthread_mutex_t *mutexp);
-int pmemtrn_begin_rwlock(PMEMtrn *ptp, pthread_rwlock_t *rwlockp);
-int pmemtrn_begin_jmp(PMEMtrn *ptp, jmp_buf env);
-int pmemtrn_commit(int tid);
-int pmemtrn_abort(int tid);
-PMEMoid pmemtrn_alloc(int tid, size_t size);
-void pmemtrn_free(int tid, PMEMoid oid);
-int pmemoid_set(int tid, PMEMoid oid, off_t off, const void *src, size_t n);
+#define	PMEMOBJS_MIN_POOL ((size_t)(1024 * 1024 * 2)) /* min pool size: 2MB */
+PMEMobjs *pmemobjs_map(int fd);
+void pmemobjs_unmap(PMEMobjs *pop);
+int pmemobjs_check(const char *path);
 
-/*
- * parts of the pmemtrn API are macros and inlines...
- */
+PMEMoid pmemobjs_root(PMEMobjs *pop);
+void *pmemobjs_root_direct(PMEMobjs *pop);
 
-#define	PMEMOID_DIRECT(type, oid) ((type)pmemoid_direct(oid))
-#define	PMEMOID_DIRECT_NTX(type, oid) ((type)pmemoid_direct_ntx(oid))
-#define	PMEMOID_ROOT_DIRECT(type, ptp) ((type)pmemoid_root_direct(ptp))
-#define	PMEMOID_SET_FIELD(tid, oid, type, field, valuep, size)\
-	pmemoid_set(tid, oid, offsetof(type, field), (void *)(value), size);
+int pmemobjs_begin(PMEMobjs *pop, jmp_buf env);
+int pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, pthread_mutex_t *mutexp);
+int pmemobjs_commit(void);
+int pmemobjs_abort(int errnum);
 
-inline int
-pmemtrn_set_int(int tid, void *dst, int srcint)
-{
-	return pmemtrn_set(tid, dst, &srcint, sizeof (srcint));
-}
+PMEMoid pmemobjs_alloc(size_t size);
+int pmemobjs_free(PMEMoid oid);
 
-inline int
-pmemtrn_set_oid(int tid, void *dst, PMEMoid srcoid)
-{
-	return pmemtrn_set(tid, dst, &srcoid, sizeof (srcoid));
-}
+void *pmemobjs_direct(PMEMoid oid);
+void *pmemobjs_direct_ntx(PMEMoid oid);
+
+int pmemobjs_nulloid(PMEMoid oid);
+
+int pmemobjs_memcpy(void *dstp, void *srcp, size_t size);
+
+#define	PMEMOBJS_SET(lhs, rhs)\
+	pmemobjs_memcpy((void *)&(lhs), (void *)&(rhs), sizeof (lhs))
 
 /*
  * support for arrays of atomically-writable blocks...
@@ -191,7 +184,7 @@ void pmem_set_funcs(
  * These are consistency checkers, for library debugging/testing, meant to
  * work on persistent memory files that are not current mapped or in use.
  */
-int pmemtrn_check(const char *path);
+int pmemobjs_check(const char *path);
 int pmemblk_check(const char *path);
 int pmemlog_check(const char *path);
 

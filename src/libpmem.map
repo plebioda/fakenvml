@@ -40,9 +40,20 @@ libpmem.so {
 		pmem_flush;
 		pmem_fence;
 		pmem_drain;
-		pmemtrn_map;
-		pmemtrn_unmap;
-		# XXX rest of pmemtrn API goes here
+		pmemobjs_map;
+		pmemobjs_unmap;
+		pmemobjs_root;
+		pmemobjs_root_direct;
+		pmemobjs_begin;
+		pmemobjs_begin_mutex;
+		pmemobjs_commit;
+		pmemobjs_abort;
+		pmemobjs_alloc;
+		pmemobjs_free;
+		pmemobjs_direct;
+		pmemobjs_direct_ntx;
+		pmemobjs_nulloid;
+		pmemobjs_memcpy;
 		pmemblk_map;
 		pmemblk_unmap;
 		pmemblk_nblock;
@@ -60,7 +71,7 @@ libpmem.so {
 		pmemlog_walk;
 		pmem_check_version;
 		pmem_set_funcs;
-		pmemtrn_check;
+		pmemobjs_check;
 		pmemblk_check;
 		pmemlog_check;
 

@@ -31,7 +31,7 @@
  */
 
 /*
- * trn.c -- transactional memory pool entry points for libpmem
+ * objs.c -- transactional object store implementation
  */
 
 #include <stdio.h>
@@ -51,16 +51,16 @@
 #include "pmem.h"
 #include "util.h"
 #include "out.h"
-#include "trn.h"
+#include "objs.h"
 
 /*
- * trn_init -- load-time initialization for trn
+ * objs_init -- load-time initialization for objs
  *
  * Called automatically by the run-time loader.
  */
 __attribute__((constructor))
 static void
-trn_init(void)
+objs_init(void)
 {
 	out_init(LOG_PREFIX, LOG_LEVEL_VAR, LOG_FILE_VAR);
 	LOG(3, NULL);
@@ -68,10 +68,10 @@ trn_init(void)
 }
 
 /*
- * pmemtrn_map -- map a transactional memory pool
+ * pmemobjs_map -- map a transactional memory pool
  */
-PMEMtrn *
-pmemtrn_map(int fd)
+PMEMobjs *
+pmemobjs_map(int fd)
 {
 	LOG(3, "fd %d", fd);
 
@@ -82,9 +82,9 @@ pmemtrn_map(int fd)
 		return NULL;
 	}
 
-	if (stbuf.st_size < PMEMTRN_MIN_POOL) {
+	if (stbuf.st_size < PMEMOBJS_MIN_POOL) {
 		LOG(1, "size %zu smaller than %zu",
-				stbuf.st_size, PMEMTRN_MIN_POOL);
+				stbuf.st_size, PMEMOBJS_MIN_POOL);
 		errno = EINVAL;
 		return NULL;
 	}
@@ -97,33 +97,33 @@ pmemtrn_map(int fd)
 	int is_pmem = pmem_is_pmem(addr, stbuf.st_size);
 
 	/* opaque info lives at the beginning of mapped memory pool */
-	struct pmemtrn *ptp = addr;
+	struct pmemobjs *pop = addr;
 
 	struct pool_hdr hdr;
-	memcpy(&hdr, &ptp->hdr, sizeof (hdr));
+	memcpy(&hdr, &pop->hdr, sizeof (hdr));
 
 	if (util_convert_hdr(&hdr)) {
 		/*
 		 * valid header found
 		 */
-		if (strncmp(hdr.signature, TRN_HDR_SIG, POOL_HDR_SIG_LEN)) {
+		if (strncmp(hdr.signature, OBJS_HDR_SIG, POOL_HDR_SIG_LEN)) {
 			LOG(1, "wrong pool type: \"%s\"", hdr.signature);
 
 			errno = EINVAL;
 			goto err;
 		}
 
-		if (hdr.major != TRN_FORMAT_MAJOR) {
-			LOG(1, "trn pool version %d (library expects %d)",
-				hdr.major, TRN_FORMAT_MAJOR);
+		if (hdr.major != OBJS_FORMAT_MAJOR) {
+			LOG(1, "objs pool version %d (library expects %d)",
+				hdr.major, OBJS_FORMAT_MAJOR);
 
 			errno = EINVAL;
 			goto err;
 		}
 
-		int retval = util_feature_check(&hdr, TRN_FORMAT_INCOMPAT,
-							TRN_FORMAT_RO_COMPAT,
-							TRN_FORMAT_COMPAT);
+		int retval = util_feature_check(&hdr, OBJS_FORMAT_INCOMPAT,
+							OBJS_FORMAT_RO_COMPAT,
+							OBJS_FORMAT_COMPAT);
 		if (retval < 0)
 		    goto err;
 		else if (retval == 0) {
@@ -133,16 +133,16 @@ pmemtrn_map(int fd)
 		/*
 		 * no valid header was found
 		 */
-		LOG(3, "creating new trn memory pool");
+		LOG(3, "creating new objs memory pool");
 
-		struct pool_hdr *hdrp = &ptp->hdr;
+		struct pool_hdr *hdrp = &pop->hdr;
 
 		memset(hdrp, '\0', sizeof (*hdrp));
-		strncpy(hdrp->signature, TRN_HDR_SIG, POOL_HDR_SIG_LEN);
-		hdrp->major = htole32(TRN_FORMAT_MAJOR);
-		hdrp->compat_features = htole32(TRN_FORMAT_COMPAT);
-		hdrp->incompat_features = htole32(TRN_FORMAT_INCOMPAT);
-		hdrp->ro_compat_features = htole32(TRN_FORMAT_RO_COMPAT);
+		strncpy(hdrp->signature, OBJS_HDR_SIG, POOL_HDR_SIG_LEN);
+		hdrp->major = htole32(OBJS_FORMAT_MAJOR);
+		hdrp->compat_features = htole32(OBJS_FORMAT_COMPAT);
+		hdrp->incompat_features = htole32(OBJS_FORMAT_INCOMPAT);
+		hdrp->ro_compat_features = htole32(OBJS_FORMAT_RO_COMPAT);
 		uuid_generate(hdrp->uuid);
 		hdrp->crtime = htole64((uint64_t)time(NULL));
 		util_checksum(hdrp, sizeof (*hdrp), &hdrp->checksum, 1);
@@ -155,8 +155,8 @@ pmemtrn_map(int fd)
 	}
 
 	/* use some of the memory pool area for run-time info */
-	ptp->addr = addr;
-	ptp->size = stbuf.st_size;
+	pop->addr = addr;
+	pop->size = stbuf.st_size;
 
 	/*
 	 * If possible, turn off all permissions on the pool header page.
@@ -170,8 +170,8 @@ pmemtrn_map(int fd)
 	RANGE_RO(addr + sizeof (struct pool_hdr),
 			stbuf.st_size - sizeof (struct pool_hdr));
 
-	LOG(3, "ptp %p", ptp);
-	return ptp;
+	LOG(3, "pop %p", pop);
+	return pop;
 
 err:
 	LOG(4, "error clean up");
@@ -182,21 +182,21 @@ err:
 }
 
 /*
- * pmemtrn_unmap -- unmap a transactional memory pool
+ * pmemobjs_unmap -- unmap a transactional memory pool
  */
 void
-pmemtrn_unmap(PMEMtrn *ptp)
+pmemobjs_unmap(PMEMobjs *pop)
 {
-	LOG(3, "ptp %p", ptp);
+	LOG(3, "pop %p", pop);
 
-	util_unmap(ptp->addr, ptp->size);
+	util_unmap(pop->addr, pop->size);
 }
 
 /*
- * pmemtrn_check -- transactional memory pool consistency check
+ * pmemobjs_check -- transactional memory pool consistency check
  */
 int
-pmemtrn_check(const char *path)
+pmemobjs_check(const char *path)
 {
 	LOG(3, "path \"%s\"", path);
 
@@ -204,118 +204,119 @@ pmemtrn_check(const char *path)
 	return 0;
 }
 
-
 /*
- * pmemoid_direct -- return a direct access pointer
- */
-void *
-pmemoid_direct(PMEMoid oid)
-{
-}
-
-/*
- * pmemoid_direct_ntx -- direct access pointer, for non-transactional use
- */
-void *
-pmemoid_direct_ntx(PMEMoid oid)
-{
-}
-
-/*
- * pmemoid_root_direct -- return a direct access pointer to the root object
- */
-void *
-pmemoid_root_direct(PMEMtrn *ptp)
-{
-}
-
-/*
- * pmemoid_nulloid -- true is oid is the NULL object
- */
-int
-pmemoid_nulloid(PMEMoid oid)
-{
-}
-
-/*
- * pmemtrn_begin -- begin a transaction on a memory pool
- *
- * Returns a transaction ID (a small integer value).
- */
-int
-pmemtrn_begin(PMEMtrn *ptp)
-{
-}
-
-/*
- * pmemtrn_begin_mutex -- begin a transaction with mutex held
- */
-int
-pmemtrn_begin_mutex(PMEMtrn *ptp, pthread_mutex_t *mutexp)
-{
-}
-
-/*
- * pmemtrn_begin_rwlock -- begin a transaction with wrlock help
- */
-int
-pmemtrn_begin_rwlock(PMEMtrn *ptp, pthread_rwlock_t *rwlockp)
-{
-}
-
-/*
- * pmemtrn_begin_jmp -- begin a transaction that longjmps on error
- *
- * The longjmp happens after the transaction auto-aborts.
- */
-int
-pmemtrn_begin_jmp(PMEMtrn *ptp, jmp_buf env)
-{
-}
-
-/*
- * pmemtrn_commit -- commit a transaction
- */
-int
-pmemtrn_commit(int tid)
-{
-}
-
-/*
- * pmemtrn_abort -- abort a transaction
- *
- * If the transaction was started using pmemtrn_begin_mutex() or
- * pmemtrn_begin_rwlock(), the locks are dropped automatically when
- * the transaction is aborted.
- *
- * If the transaction was started using pmemtrn_begin_jmp(), the
- * longjmp is taken after the transaction is aborted.
- */
-int
-pmemtrn_abort(int tid)
-{
-}
-
-/*
- * pmemtrn_alloc -- allocate an object
+ * pmemobjs_root -- return root object ID
  */
 PMEMoid
-pmemtrn_alloc(int tid, size_t size)
+pmemobjs_root(PMEMobjs *pop)
 {
+	PMEMoid r = { 0 };
+
+	return r;
 }
 
 /*
- * pmemtrn_free -- free an object
+ * pmemobjs_root_direct -- return direct access to root object
  */
-void
-pmemtrn_free(int tid, PMEMoid oid)
+void *
+pmemobjs_root_direct(PMEMobjs *pop)
 {
+	return pmemobjs_direct(pmemobjs_root(pop));
 }
 
 /*
- * pmemoid_set -- write to an object at a given offset, keeping an undo log
+ * pmemobjs_begin -- begin a transaction
  */
 int
-pmemoid_set(int tid, PMEMoid oid, off_t off, const void *src, size_t n)
+pmemobjs_begin(PMEMobjs *pop, jmp_buf env)
 {
+	return 0;
+}
+
+/*
+ * pmemobjs_begin -- begin a transaction with a mutex
+ */
+int
+pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, pthread_mutex_t *mutexp)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_commit -- commit transaction, implicit tid
+ */
+int
+pmemobjs_commit(void)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_abort -- abort transaction, implicit tid
+ */
+int
+pmemobjs_abort(int errnum)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_alloc -- transactional allocate, implicit tid
+ */
+PMEMoid
+pmemobjs_alloc(size_t size)
+{
+	PMEMoid n = { 0 };
+
+	return n;
+}
+
+/*
+ * pmemobjs_free -- transactional free, implicit tid
+ */
+int
+pmemobjs_free(PMEMoid oid)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_direct -- return direct access to an object
+ *
+ * The direct access is for fetches only, stores must be done by
+ * pmemobjs_memcpy() or PMEMOBJS_SET().  When debugging is enabled,
+ * attempting to store to the pointer returned by this call will
+ * result in a SEGV.
+ */
+void *
+pmemobjs_direct(PMEMoid oid)
+{
+	return NULL;
+}
+
+/*
+ * pmemobjs_direct_ntx -- return direct access to an object, non-transactional
+ */
+void *
+pmemobjs_direct_ntx(PMEMoid oid)
+{
+	return NULL;
+}
+
+/*
+ * pmemobjs_nulloid -- true is object ID is the NULL object
+ */
+int
+pmemobjs_nulloid(PMEMoid oid)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_memcpy -- change a range of pmem, making undo log entries as well
+ */
+int
+pmemobjs_memcpy(void *dstp, void *srcp, size_t size)
+{
+	return 0;
 }

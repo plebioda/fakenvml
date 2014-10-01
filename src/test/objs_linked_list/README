@@ -1,0 +1,10 @@
+Linux NVM Library
+
+This is src/test/objs_linked_list/README.
+
+This directory contains a simple linked list test for pmemobjs.
+
+Run:
+	objs_linked_list file
+
+to create a pmemobjs linked list data structure in the given file.

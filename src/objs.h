@@ -31,26 +31,33 @@
  */
 
 /*
- * trn_linked_list.c -- linked list unit test for pmemtrn
- *
- * usage: trn_linked_list file
+ * objs.h -- internal definitions for objs module
  */
 
-#include "unittest.h"
+/* attributes of the objs memory pool format for the pool header */
+#define	OBJS_HDR_SIG "PM_OBJS"	/* must be 8 bytes including '\0' */
+#define	OBJS_FORMAT_MAJOR 1
+#define	OBJS_FORMAT_COMPAT 0x0000
+#define	OBJS_FORMAT_INCOMPAT 0x0000
+#define	OBJS_FORMAT_RO_COMPAT 0x0000
 
-int
-main(int argc, char *argv[])
-{
-	START(argc, argv, "trn_linked_list");
+struct pmemobjs {
+	struct pool_hdr hdr;	/* memory pool header */
 
-	if (argc !=  2)
-		FATAL("usage: %s file", argv[0]);
+	/* root info for on-media format... */
 
-	int fd = OPEN(argv[1], O_RDWR);
+	/* some run-time state, allocated out of memory pool... */
+	void *addr;		/* mapped region */
+	size_t size;		/* size of mapped region */
+};
 
-	PMEMtrn *ptp = pmemtrn_map(fd);
-	/* XXX */
-	pmemtrn_unmap(ptp);
+/* alignment of every object */
+#define	PMEMOID_INTERNAL_ALIGN 256
 
-	DONE(NULL);
-}
+/* info kept by the library for each allocated object */
+struct pmemoid_header {
+	uint64_t size;		/* requested object size */
+	uint64_t actual_size;	/* actual object size */
+	uint64_t flags;
+	uint64_t unused[5];
+};

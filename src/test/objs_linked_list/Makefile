@@ -31,13 +31,13 @@
 #
 
 #
-# src/test/trn_linked_list/Makefile -- build trn_linked_list unit test
+# src/test/objs_linked_list/Makefile -- build objs_linked_list unit test
 #
-TARGET = trn_linked_list
-OBJS = trn_linked_list.o
+TARGET = objs_linked_list
+OBJS = objs_linked_list.o
 
 include ../Makefile.inc
 
 LIBS += -lpmem
 
-trn_linked_list.o: trn_linked_list.c
+objs_linked_list.o: objs_linked_list.c
