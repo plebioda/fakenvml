@@ -31,25 +31,15 @@
 #
 
 #
-# src/test/Makefile -- build all unit tests
+# src/test/blk_rw/Makefile -- build blk_rw unit test
 #
-# Makefile -- build all unit tests
-#
-TEST = blk_rw\
-       blk_rw_mt
+TARGET = blk_rw
+OBJS = blk_rw.o
 
-all     : TARGET = all
-clean   : TARGET = clean
-clobber : TARGET = clobber
-test    : TARGET = test
-cstyle  : TARGET = cstyle
+include ../Makefile.inc
 
-all clean clobber test cstyle: $(TEST)
+LIBS += -lpmem -lpthread -ldl
+STATIC_DEBUG_LIBS += -ldl
+STATIC_NONDEBUG_LIBS += -ldl
 
-$(TEST): unittest
-	$(MAKE) -C $@ $(TARGET)
-
-unittest:
-	$(MAKE) -C $@ $(TARGET)
-
-.PHONY: all clean clobber test cstyle unittest $(TEST)
+blk_rw.o: blk_rw.c

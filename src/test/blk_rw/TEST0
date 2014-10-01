@@ -1,3 +1,4 @@
+#!/bin/bash -e
 #
 # Copyright (c) 2014, Intel Corporation
 #
@@ -31,25 +32,31 @@
 #
 
 #
-# src/test/Makefile -- build all unit tests
+# src/test/blk_rw/TEST0 -- unit test for pmemblk_read/write/set_zero/set_error
 #
-# Makefile -- build all unit tests
+export UNITTEST_NAME=blk_rw/TEST0
+export UNITTEST_NUM=0
+
+# standard unit test setup
+. ../unittest/unittest.sh
+
+# doesn't make sense to run in local directory
+require_fs_type pmem non-pmem
+
+setup
+
+# single arena case
+rm -f $DIR/testfile1
+truncate -s 2G $DIR/testfile1
 #
-TEST = blk_rw\
-       blk_rw_mt
+# All reads to an unwritten block pool should return zeros.
+# Block 4161478 is out of range and should return EINVAL.
+# Attempts to zero uninitialized blocks are nops (should succeed).
+#
+expect_normal_exit ./blk_rw$EXESUFFIX 512 $DIR/testfile1\
+	r:0 r:1 r:1477 r:1478 z:0 z:1 r:0
+rm $DIR/testfile1
 
-all     : TARGET = all
-clean   : TARGET = clean
-clobber : TARGET = clobber
-test    : TARGET = test
-cstyle  : TARGET = cstyle
+check
 
-all clean clobber test cstyle: $(TEST)
-
-$(TEST): unittest
-	$(MAKE) -C $@ $(TARGET)
-
-unittest:
-	$(MAKE) -C $@ $(TARGET)
-
-.PHONY: all clean clobber test cstyle unittest $(TEST)
+pass

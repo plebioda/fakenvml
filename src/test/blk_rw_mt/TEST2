@@ -1,3 +1,4 @@
+#!/bin/bash -e
 #
 # Copyright (c) 2014, Intel Corporation
 #
@@ -31,13 +32,28 @@
 #
 
 #
-# src/test/trn_linked_list/Makefile -- build trn_linked_list unit test
+# src/test/blk_rw_mt/TEST2 -- unit test for MT I/O on blk pool
 #
-TARGET = trn_linked_list
-OBJS = trn_linked_list.o
+export UNITTEST_NAME=blk_rw_mt/TEST2
+export UNITTEST_NUM=2
 
-include ../Makefile.inc
+# standard unit test setup
+. ../unittest/unittest.sh
 
-LIBS += -lpmem
+# this is the long version of the test
+require_test_type long
 
-trn_linked_list.o: trn_linked_list.c
+# doesn't make sense to run in local directory
+require_fs_type pmem non-pmem
+
+setup
+
+rm -f $DIR/testfile1
+truncate -s 1G $DIR/testfile1
+# 300 threads, each doing 100000 random I/Os
+expect_normal_exit ./blk_rw_mt$EXESUFFIX 4096 $DIR/testfile1 789 300 100000
+rm $DIR/testfile1
+
+check
+
+pass

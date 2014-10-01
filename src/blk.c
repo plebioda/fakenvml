@@ -54,7 +54,6 @@
 #include "pmem.h"
 #include "util.h"
 #include "out.h"
-#include "btt.h"
 #include "blk.h"
 
 /*
@@ -69,39 +68,6 @@ blk_init(void)
 	out_init(LOG_PREFIX, LOG_LEVEL_VAR, LOG_FILE_VAR);
 	LOG(3, NULL);
 	util_init();
-}
-
-/*
- * lane_enter -- (internal) acquire a unique lane number
- */
-static int
-lane_enter(PMEMblk *pbp)
-{
-	int mylane;
-
-	mylane = __sync_fetch_and_add(&pbp->next_lane, 1) % pbp->nlane;
-
-	/* lane selected, grab the per-lane lock */
-	if (pthread_mutex_lock(&pbp->locks[mylane]) < 0) {
-		LOG(1, "!pthread_mutex_lock");
-		return -1;
-	}
-
-	return mylane;
-}
-
-/*
- * lane_exit -- (internal) drop lane lock
- */
-static int
-lane_exit(PMEMblk *pbp, int mylane)
-{
-	if (pthread_mutex_unlock(&pbp->locks[mylane]) < 0) {
-		LOG(1, "!pthread_mutex_unlock");
-		return -1;
-	}
-
-	return 0;
 }
 
 /*
@@ -177,70 +143,6 @@ nswrite(void *ns, int lane, const void *buf, size_t count, off_t off)
 }
 
 /*
- * nsmap -- (internal) allow direct access to a range of a namespace
- *
- * The caller requests a range to be "mapped" but the return value
- * may indicate a smaller amount (in which case the caller is expected
- * to call back later for another mapping).
- *
- * This routine is provided to btt_init() to allow the btt module to
- * do I/O on the memory pool containing the BTT layout.
- */
-static int
-nsmap(void *ns, int lane, void **addrp, size_t len, off_t off)
-{
-	struct pmemblk *pbp = (struct pmemblk *)ns;
-
-	LOG(12, "pbp %p lane %d len %zu off %zu", pbp, lane, len, off);
-
-	if (off + len >= pbp->datasize) {
-		LOG(1, "offset + len (%zu) past end of data area (%zu)",
-				off + len, pbp->datasize - 1);
-		errno = EINVAL;
-		return -1;
-	}
-
-	/*
-	 * Since the entire file is memory-mapped, this callback
-	 * can always provide the entire length requested.
-	 */
-	*addrp = pbp->data + off;
-
-	LOG(12, "returning addr %p", *addrp);
-
-	return len;
-}
-
-/*
- * nssync -- (internal) flush changes made to a namespace range
- *
- * This is used in conjunction with the addresses handed out by
- * nsmap() above.  There's no need to sync things written via
- * nswrite() since those changes are flushed each time nswrite()
- * is called.
- *
- * This routine is provided to btt_init() to allow the btt module to
- * do I/O on the memory pool containing the BTT layout.
- */
-static void
-nssync(void *ns, int lane, void *addr, size_t len)
-{
-	struct pmemblk *pbp = (struct pmemblk *)ns;
-
-	LOG(12, "pbp %p lane %d addr %p len %zu", pbp, lane, addr, len);
-
-	libpmem_persist(pbp->is_pmem, addr, len);
-}
-
-/* callbacks for btt_init() */
-static const struct ns_callback ns_cb = {
-	nsread,
-	nswrite,
-	nsmap,
-	nssync
-};
-
-/*
  * pmemblk_map_common -- (internal) map a block memory pool
  *
  * This routine does all the work, but takes a rdonly flag so internal
@@ -256,8 +158,6 @@ pmemblk_map_common(int fd, size_t bsize, int rdonly)
 
 	/* things free by "goto err" if not NULL */
 	void *addr = NULL;
-	struct btt *bttp = NULL;
-	pthread_mutex_t *locks = NULL;
 
 	struct stat stbuf;
 	if (fstat(fd, &stbuf) < 0) {
@@ -371,29 +271,6 @@ pmemblk_map_common(int fd, size_t bsize, int rdonly)
 	if (ncpus < 1)
 		ncpus = 1;
 
-	bttp = btt_init(pbp->datasize, (uint32_t)bsize, pbp->hdr.uuid,
-			ncpus, pbp, &ns_cb);
-
-	if (bttp == NULL)
-		goto err;	/* btt_init set errno, called LOG */
-
-	pbp->bttp = bttp;
-
-	pbp->nlane = btt_nlane(pbp->bttp);
-	pbp->next_lane = 0;
-	if ((locks = Malloc(pbp->nlane * sizeof (*locks))) == NULL) {
-		LOG(1, "!Malloc for lane locks");
-		goto err;
-	}
-
-	for (int i = 0; i < pbp->nlane; i++)
-		if (pthread_mutex_init(&locks[i], NULL) < 0) {
-			LOG(1, "!pthread_mutex_init");
-			goto err;
-		}
-
-	pbp->locks = locks;
-
 #ifdef DEBUG
 	/* initialize debug lock */
 	if (pthread_mutex_init(&pbp->write_lock, NULL) < 0) {
@@ -419,10 +296,6 @@ pmemblk_map_common(int fd, size_t bsize, int rdonly)
 err:
 	LOG(4, "error clean up");
 	int oerrno = errno;
-	if (locks)
-		Free((void *)locks);
-	if (bttp)
-		btt_fini(bttp);
 	util_unmap(addr, stbuf.st_size);
 	errno = oerrno;
 	return NULL;
@@ -447,13 +320,6 @@ pmemblk_unmap(PMEMblk *pbp)
 {
 	LOG(3, "pbp %p", pbp);
 
-	btt_fini(pbp->bttp);
-	if (pbp->locks) {
-		for (int i = 0; i < pbp->nlane; i++)
-			pthread_mutex_destroy(&pbp->locks[i]);
-		Free((void *)pbp->locks);
-	}
-
 #ifdef DEBUG
 	/* destroy debug lock */
 	pthread_mutex_destroy(&pbp->write_lock);
@@ -470,7 +336,7 @@ pmemblk_nblock(PMEMblk *pbp)
 {
 	LOG(3, "pbp %p", pbp);
 
-	return btt_nlba(pbp->bttp);
+	return pbp->size / pbp->bsize;
 }
 
 /*
@@ -481,16 +347,7 @@ pmemblk_read(PMEMblk *pbp, void *buf, off_t blockno)
 {
 	LOG(3, "pbp %p buf %p blockno %zu", pbp, buf, blockno);
 
-	int lane = lane_enter(pbp);
-
-	if (lane < 0)
-		return -1;
-
-	int err = btt_read(pbp->bttp, lane, blockno, buf);
-
-	lane_exit(pbp, lane);
-
-	return err;
+	return nsread(pbp, 0, buf, pbp->bsize, blockno * pbp->bsize);
 }
 
 /*
@@ -507,16 +364,7 @@ pmemblk_write(PMEMblk *pbp, const void *buf, off_t blockno)
 		return -1;
 	}
 
-	int lane = lane_enter(pbp);
-
-	if (lane < 0)
-		return -1;
-
-	int err = btt_write(pbp->bttp, lane, blockno, buf);
-
-	lane_exit(pbp, lane);
-
-	return err;
+	return nswrite(pbp, 0, buf, pbp->bsize, blockno * pbp->bsize);
 }
 
 /*
@@ -533,16 +381,7 @@ pmemblk_set_zero(PMEMblk *pbp, off_t blockno)
 		return -1;
 	}
 
-	int lane = lane_enter(pbp);
-
-	if (lane < 0)
-		return -1;
-
-	int err = btt_set_zero(pbp->bttp, lane, blockno);
-
-	lane_exit(pbp, lane);
-
-	return err;
+	return -1;
 }
 
 /*
@@ -559,16 +398,7 @@ pmemblk_set_error(PMEMblk *pbp, off_t blockno)
 		return -1;
 	}
 
-	int lane = lane_enter(pbp);
-
-	if (lane < 0)
-		return -1;
-
-	int err = btt_set_error(pbp->bttp, lane, blockno);
-
-	lane_exit(pbp, lane);
-
-	return err;
+	return -1;
 }
 
 /*
@@ -579,24 +409,5 @@ pmemblk_check(const char *path)
 {
 	LOG(3, "path \"%s\"", path);
 
-	int fd = open(path, O_RDWR);
-
-	if (fd < 0) {
-		LOG(1, "!open");
-		return -1;
-	}
-
-	/* open the pool read-only */
-	PMEMblk *pbp = pmemblk_map_common(fd, 0, 1);
-	close(fd);
-
-	if (pbp == NULL)
-		return -1;	/* errno set by pmemblk_map_common() */
-
-	int retval = btt_check(pbp->bttp);
-	int oerrno = errno;
-	pmemblk_unmap(pbp);
-	errno = oerrno;
-
-	return retval;
+	return 1;
 }

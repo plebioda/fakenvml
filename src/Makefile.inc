@@ -62,7 +62,7 @@ LIBPMEM_SONAME=$(LIBPMEMSO).$(PMEMSOVERSION)
 LIBPMEM_REALNAME=$(LIBPMEM_SONAME).$(PMEMLIBVERSION)
 
 COMMONOBJS = out.o util.o
-PMEMOBJS = libpmem.o blk.o btt.o log.o pmem.o trn.o $(COMMONOBJS)
+PMEMOBJS = libpmem.o blk.o log.o pmem.o trn.o $(COMMONOBJS)
 PMEMMAPFILE = ../libpmem.map
 TARGET_LIBS = $(LIBPMEMAR) $(LIBPMEM_REALNAME)
 TARGET_LINKS= $(LIBPMEMSO) $(LIBPMEM_SONAME)
@@ -102,7 +102,6 @@ clobber: clean
 
 libpmem.o: libpmem.c libpmem.h pmem.h util.h out.h
 blk.o: blk.c libpmem.h pmem.h blk.h util.h out.h
-btt.o: btt.c util.h btt.h btt_layout.h
 log.o: log.c libpmem.h pmem.h log.h util.h out.h
 pmem.o: pmem.c libpmem.h pmem.h out.h
 trn.o: trn.c libpmem.h pmem.h trn.h util.h out.h

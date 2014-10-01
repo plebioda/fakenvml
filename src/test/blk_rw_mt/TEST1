@@ -1,3 +1,4 @@
+#!/bin/bash -e
 #
 # Copyright (c) 2014, Intel Corporation
 #
@@ -31,25 +32,28 @@
 #
 
 #
-# src/test/Makefile -- build all unit tests
+# src/test/blk_rw_mt/TEST1 -- unit test for MT I/O on blk pool
 #
-# Makefile -- build all unit tests
-#
-TEST = blk_rw\
-       blk_rw_mt
+export UNITTEST_NAME=blk_rw_mt/TEST1
+export UNITTEST_NUM=1
 
-all     : TARGET = all
-clean   : TARGET = clean
-clobber : TARGET = clobber
-test    : TARGET = test
-cstyle  : TARGET = cstyle
+# standard unit test setup
+. ../unittest/unittest.sh
 
-all clean clobber test cstyle: $(TEST)
+# this is the short version of the test
+require_test_type short
 
-$(TEST): unittest
-	$(MAKE) -C $@ $(TARGET)
+# doesn't make sense to run in local directory
+require_fs_type pmem non-pmem
 
-unittest:
-	$(MAKE) -C $@ $(TARGET)
+setup
 
-.PHONY: all clean clobber test cstyle unittest $(TEST)
+rm -f $DIR/testfile1
+truncate -s 1G $DIR/testfile1
+# 100 threads, each doing 100 random I/Os
+expect_normal_exit ./blk_rw_mt$EXESUFFIX 4096 $DIR/testfile1 456 100 100
+rm $DIR/testfile1
+
+check
+
+pass
