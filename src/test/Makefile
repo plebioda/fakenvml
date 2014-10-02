@@ -35,7 +35,7 @@
 #
 # Makefile -- build all unit tests
 #
-TEST = objs_linked_list
+TEST = objs_list_basic
 
 all     : TARGET = all
 clean   : TARGET = clean

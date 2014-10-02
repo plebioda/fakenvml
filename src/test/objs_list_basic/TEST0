@@ -1,3 +1,4 @@
+#!/bin/bash -e
 #
 # Copyright (c) 2014, Intel Corporation
 #
@@ -31,13 +32,21 @@
 #
 
 #
-# src/test/objs_linked_list/Makefile -- build objs_linked_list unit test
+# src/test/objs_list_basic/TEST0 -- unit test for objs_list_basic
 #
-TARGET = objs_linked_list
-OBJS = objs_linked_list.o
+export UNITTEST_NAME=objs_list_basic/TEST0
+export UNITTEST_NUM=0
 
-include ../Makefile.inc
+# standard unit test setup
+. ../unittest/unittest.sh
 
-LIBS += -lpmem
+setup
 
-objs_linked_list.o: objs_linked_list.c
+rm -f $DIR/testfile1
+truncate -s 2G $DIR/testfile1
+expect_normal_exit ./objs_list_basic$EXESUFFIX $DIR/testfile1
+rm $DIR/testfile1
+
+check
+
+pass

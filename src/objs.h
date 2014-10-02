@@ -49,6 +49,11 @@ struct pmemobjs {
 	/* some run-time state, allocated out of memory pool... */
 	void *addr;		/* mapped region */
 	size_t size;		/* size of mapped region */
+
+	/* for the fake implementation... */
+	pthread_mutex_t rootlock;
+	void *rootp;
+	size_t rootsize;
 };
 
 /* alignment of every object */

@@ -31,9 +31,13 @@
  */
 
 /*
- * objs_linked_list.c -- linked list unit test for pmemobjs
+ * objs_list_basic.c -- linked list unit test for pmemobjs
  *
- * usage: objs_linked_list file
+ * usage: objs_list_basic file [val...]
+ *
+ * The "val" arguments are integers, which are inserted at the beginning
+ * of the list.  If the special val "f" is ever encountered, the list
+ * is freed and continues with an empty list from that point.
  */
 
 #include "unittest.h"
@@ -134,23 +138,66 @@ print(PMEMobjs *pop)
 {
 	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
 
-	pmemobjs_mutex_lock(&bp->mutex);
+	OUT("list contains:");
 
 	/* protect the loop below by acquiring the list mutex */
+	pmemobjs_mutex_lock(&bp->mutex);
+
 	struct node *np = pmemobjs_direct(bp->head);
 
 	while (np != NULL) {
-		OUT("Node: %d", np->value);
+		OUT("    value %d", np->value);
 		np = pmemobjs_direct(np->next);
 	}
 
 	pmemobjs_mutex_unlock(&bp->mutex);
 }
 
+/*
+ * freelist -- free the entire list
+ */
+int
+freelist(PMEMobjs *pop)
+{
+	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	jmp_buf env;
+
+	if (setjmp(env)) {
+		/* transaction aborted, errno set by library */
+		return -1;
+	}
+
+	/* begin a transaction, also acquiring the mutex for the list */
+	pmemobjs_begin_mutex(pop, env, &bp->mutex);
+
+	/*
+	 * Since pmemobjs_free() operates on the object ID, use "noid"
+	 * to loop through the list of objects and free them, and use "np"
+	 * for direct access to the np->next field while looping.
+	 */
+	PMEMoid noid = bp->head;
+	struct node *np = pmemobjs_direct(noid);
+
+	/* loop through the list, freeing each node */
+	while (np != NULL) {
+		PMEMoid nextnoid = np->next;
+
+		pmemobjs_free(noid);
+
+		noid = nextnoid;
+		np = pmemobjs_direct(noid);
+	}
+
+	/* commit the transaction, all the frees become permanent now */
+	pmemobjs_commit();
+
+	return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
-	START(argc, argv, "objs_linked_list");
+	START(argc, argv, "objs_list_basic");
 
 	if (argc < 2)
 		FATAL("usage: %s file [val...]", argv[0]);
@@ -162,8 +209,19 @@ main(int argc, char *argv[])
 
 	/* if any values were provided, add them to the list */
 	for (int i = 2; i < argc; i++)
-		if (insert(pop, atoi(argv[i])) == NULL)
-			ERR("!insert on value \"%s\"", argv[i]);
+		if (*argv[i] == 'f') {
+			if (freelist(pop) < 0)
+				ERR("!freelist");
+			else
+				OUT("list freed");
+		} else {
+			int val = atoi(argv[i]);
+
+			if (insert(pop, val) == NULL)
+				ERR("!insert on value %d", val);
+			else
+				OUT("value %d inserted", val);
+		}
 
 	/* print the entire list */
 	print(pop);
