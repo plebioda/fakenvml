@@ -208,7 +208,7 @@ pmemobjs_check(const char *path)
  * pmemobjs_root -- return root object ID
  */
 PMEMoid
-pmemobjs_root(PMEMobjs *pop)
+pmemobjs_root(PMEMobjs *pop, size_t size)
 {
 	PMEMoid r = { 0 };
 
@@ -217,18 +217,35 @@ pmemobjs_root(PMEMobjs *pop)
 
 /*
  * pmemobjs_root_direct -- return direct access to root object
+ *
+ * The root object is special.  If it doesn't exist, a pre-zeroed instance
+ * is created, persisted, and then returned.  If it does exist, the
+ * instance already in pmem is returned.  Creation is done atomically, so
+ * two threads calling pmemobjs_root_direct() concurrently will get back
+ * the same pointer to the same object, even if it has to be created.  But
+ * beyond that there's no protection against concurrent updates and the
+ * object almost certainly needs to contain a lock to make updates to it
+ * MT-safe.
+ *
+ * The argument "size" is used to determine the size of the root object, 
+ * the first time this is called, but after that the object already exists
+ * and size is used to verify the caller knows the correct size.
  */
 void *
-pmemobjs_root_direct(PMEMobjs *pop)
+pmemobjs_root_direct(PMEMobjs *pop, size_t size)
 {
-	return pmemobjs_direct(pmemobjs_root(pop));
+	return pmemobjs_direct(pmemobjs_root(pop, size));
 }
 
 /*
- * pmemobjs_set_root -- set the root object
+ * pmemobjs_root_resize -- set the root object size
+ *
+ * This is for the (extremely rare) case where the root object needs
+ * to change size.  If the object grows in size, the new portion of
+ * the object is zeroed.
  */
 int
-pmemobjs_set_root(PMEMoid oid)
+pmemobjs_root_resize(PMEMobjs *pop, size_t newsize)
 {
 	return 0;
 }

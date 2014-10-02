@@ -102,9 +102,9 @@ typedef struct pmemmutex {
 	pthread_mutex_t *mutexp;
 } PMEMmutex;
 
-PMEMoid pmemobjs_root(PMEMobjs *pop);
-void *pmemobjs_root_direct(PMEMobjs *pop);
-int pmemobjs_set_root(PMEMoid oid);
+PMEMoid pmemobjs_root(PMEMobjs *pop, size_t size);
+void *pmemobjs_root_direct(PMEMobjs *pop, size_t size);
+int pmemobjs_root_resize(PMEMobjs *pop, size_t size);
 
 int pmemobjs_begin(PMEMobjs *pop, jmp_buf env);
 int pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, PMEMmutex *mutexp);

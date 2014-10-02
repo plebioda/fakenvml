@@ -53,7 +53,7 @@ libpmem.so {
 		pmemobjs_nulloid;
 		pmemobjs_root;
 		pmemobjs_root_direct;
-		pmemobjs_set_root;
+		pmemobjs_root_resize;
 		pmemobjs_unmap;
 		pmemobjs_zalloc;
 		pmemblk_map;

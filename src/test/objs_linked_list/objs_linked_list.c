@@ -51,25 +51,12 @@ struct base {
 };
 
 /*
- * checkbase -- if no base structure has been created yet, create it
- */
-void
-checkbase(PMEMobjs *pop)
-{
-	if (pmemobjs_root_direct(pop) == NULL) {
-		pmemobjs_begin(pop, NULL);
-		pmemobjs_set_root(pmemobjs_zalloc(sizeof (struct base)));
-		pmemobjs_commit();
-	}
-}
-
-/*
  * insert -- allocate a new node, and prepend it to the list
  */
 struct node *
 insert(PMEMobjs *pop, int d)
 {
-	struct base *bp = pmemobjs_root_direct(pop);
+	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
 	if (setjmp(env)) {
@@ -147,9 +134,6 @@ main(int argc, char *argv[])
 	int fd = OPEN(argv[1], O_RDWR);
 
 	PMEMobjs *pop = pmemobjs_map(fd);
-
-	/* first time through, create the base structure */
-	checkbase(pop);
 
 	struct node *np = insert(pop, 1);
 
