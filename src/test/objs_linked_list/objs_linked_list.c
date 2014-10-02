@@ -77,8 +77,10 @@ insert(PMEMobjs *pop, int val)
 		return NULL;
 	}
 
+	/* begin a transaction, also acquiring the mutex for the list */
 	pmemobjs_begin_mutex(pop, env, &bp->mutex);
 
+	/* allocate the new node to be inserted */
 	PMEMoid newoid = pmemobjs_alloc(sizeof (struct node));
 	struct node *newnode = pmemobjs_direct_ntx(newoid);
 
@@ -118,6 +120,7 @@ insert(PMEMobjs *pop, int val)
 	newnode->next = bp->head;
 	PMEMOBJS_SET(bp->head, newoid);
 
+	/* commit the transaction (also drops the mutex when complete) */
 	pmemobjs_commit();
 
 	return newnode;
@@ -133,6 +136,7 @@ print(PMEMobjs *pop)
 
 	pmemobjs_mutex_lock(&bp->mutex);
 
+	/* protect the loop below by acquiring the list mutex */
 	struct node *np = pmemobjs_direct(bp->head);
 
 	while (np != NULL) {
@@ -153,6 +157,7 @@ main(int argc, char *argv[])
 
 	int fd = OPEN(argv[1], O_RDWR);
 
+	/* map the "object store" memory pool */
 	PMEMobjs *pop = pmemobjs_map(fd);
 
 	/* if any values were provided, add them to the list */
@@ -163,6 +168,7 @@ main(int argc, char *argv[])
 	/* print the entire list */
 	print(pop);
 
+	/* all done */
 	pmemobjs_unmap(pop);
 
 	DONE(NULL);
