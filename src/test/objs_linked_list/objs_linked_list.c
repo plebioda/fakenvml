@@ -40,17 +40,28 @@
 
 /* struct node is the element in the linked list */
 struct node {
-        PMEMoid next;           /* object ID of next struct node */
-        int data;
+	PMEMoid next;		/* object ID of next struct node */
+	int data;
 };
 
 /* struct base keeps track of the beginning of the list */
 struct base {
-        PMEMoid head;           /* object ID of first struct node in list */
+	PMEMoid head;		/* object ID of first struct node in list */
+	PMEMmutex mutex;	/* lock covering entire list */
 };
 
-/* list is protected by this mutex (everything, list and nodes) */
-pthread_mutex_t list_mutex = PTHREAD_MUTEX_INITIALIZER;
+/*
+ * checkbase -- if no base structure has been created yet, create it
+ */
+void
+checkbase(PMEMobjs *pop)
+{
+	if (pmemobjs_root_direct(pop) == NULL) {
+		pmemobjs_begin(pop, NULL);
+		pmemobjs_set_root(pmemobjs_zalloc(sizeof (struct base)));
+		pmemobjs_commit();
+	}
+}
 
 /*
  * insert -- allocate a new node, and prepend it to the list
@@ -58,14 +69,14 @@ pthread_mutex_t list_mutex = PTHREAD_MUTEX_INITIALIZER;
 struct node *
 insert(PMEMobjs *pop, int d)
 {
-        struct base *bp = pmemobjs_root_direct(pop);
+	struct base *bp = pmemobjs_root_direct(pop);
 	jmp_buf env;
-	
+
 	if (setjmp(env)) {
 		/*
-		 * If we get here, the transaction was aborted due to an error.
-		 * For this simple example, the possible errors would be
-		 * an error trying to grab the mutex during the call to
+		 * If we get here, the transaction was aborted due to an
+		 * error.  For this simple example, the possible errors would
+		 * be an error trying to grab the mutex during the call to
 		 * pmemobjs_begin_mutex() below, out of memory during the
 		 * call to pmemobjs_alloc() below, or out of undo log space
 		 * during the call to PMEMOBJS_SET() below.
@@ -79,50 +90,50 @@ insert(PMEMobjs *pop, int d)
 		return NULL;
 	}
 
-        pmemobjs_begin_mutex(pop, env, &list_mutex);
+	pmemobjs_begin_mutex(pop, env, &bp->mutex);
 
-                PMEMoid newoid = pmemobjs_alloc(sizeof (struct node));
-                struct node *newnode = pmemobjs_direct_ntx(newoid);
+	PMEMoid newoid = pmemobjs_alloc(sizeof (struct node));
+	struct node *newnode = pmemobjs_direct_ntx(newoid);
 
-		/*
-		 * Now we have two ways to refer to the new node:
-		 *
-		 *	newoid is the object ID.  We can't dereference that
-		 *	directly but when we point to the new node in pmem,
-		 *	we do it by setting bp->head to the object ID, newoid.
-		 *
-		 *	newnode is the struct node *. Fetching from it works
-		 *	as expected, so you could write, for example:
-		 *		d = newnode->d;
-		 *	to read from newnode.  You just can't store the
-		 *	pointer newnode somewhere persistent and expect it
-		 *	to work next time the program runs -- only object IDs
-		 *	work across program runs.
-		 *
-		 *	Since pmemobjs_direct_ntx() was used, a
-		 *	non-transactional pointer to newoid was returned
-		 *	which means you can also store to it, but no undo
-		 *	log is kept.  So when you do:
-		 *		newnode->d = d;
-		 *	the value is stored directly in newnode, and if
-		 *	the transaction aborts, the newnode allocation is
-		 *	undone so there's no need to worry about rolling back
-		 *	the store.
-		 *
-		 *	On the other hand, when bp->head is stored below,
-		 *	that's not a new allocation that was part of this
-		 *	transaction (bp already existed), so you cannot
-		 *	store directly to bp->head, you must use the
-		 *	transactional store via the PMEMOBJS_SET() macro.
-		 */
+	/*
+	 * Now we have two ways to refer to the new node:
+	 *
+	 *	newoid is the object ID.  We can't dereference that
+	 *	directly but when we point to the new node in pmem,
+	 *	we do it by setting bp->head to the object ID, newoid.
+	 *
+	 *	newnode is the struct node *. Fetching from it works
+	 *	as expected, so you could write, for example:
+	 *		d = newnode->d;
+	 *	to read from newnode.  You just can't store the
+	 *	pointer newnode somewhere persistent and expect it
+	 *	to work next time the program runs -- only object IDs
+	 *	work across program runs.
+	 *
+	 *	Since pmemobjs_direct_ntx() was used, a
+	 *	non-transactional pointer to newoid was returned
+	 *	which means you can also store to it, but no undo
+	 *	log is kept.  So when you do:
+	 *		newnode->d = d;
+	 *	the value is stored directly in newnode, and if
+	 *	the transaction aborts, the newnode allocation is
+	 *	undone so there's no need to worry about rolling back
+	 *	the store.
+	 *
+	 *	On the other hand, when bp->head is stored below,
+	 *	that's not a new allocation that was part of this
+	 *	transaction (bp already existed), so you cannot
+	 *	store directly to bp->head, you must use the
+	 *	transactional store via the PMEMOBJS_SET() macro.
+	 */
 
-                newnode->data = d;
-                newnode->next = bp->head;
-                PMEMOBJS_SET(bp->head, newoid);
+	newnode->data = d;
+	newnode->next = bp->head;
+	PMEMOBJS_SET(bp->head, newoid);
 
-        pmemobjs_commit();
+	pmemobjs_commit();
 
-        return newnode;
+	return newnode;
 }
 
 int
@@ -136,6 +147,9 @@ main(int argc, char *argv[])
 	int fd = OPEN(argv[1], O_RDWR);
 
 	PMEMobjs *pop = pmemobjs_map(fd);
+
+	/* first time through, create the base structure */
+	checkbase(pop);
 
 	struct node *np = insert(pop, 1);
 

@@ -64,14 +64,6 @@ typedef struct pmemblk PMEMblk;
 typedef struct pmemlog PMEMlog;
 
 /*
- * Object IDs used with pmemobjs...
- */
-typedef struct pmemoid {
-	uint64_t pool;
-	uint64_t off;
-} PMEMoid;
-
-/*
  * basic PMEM flush-to-durability support...
  */
 void *pmem_map(int fd);
@@ -89,15 +81,38 @@ PMEMobjs *pmemobjs_map(int fd);
 void pmemobjs_unmap(PMEMobjs *pop);
 int pmemobjs_check(const char *path);
 
+/*
+ * Object IDs used with pmemobjs...
+ */
+typedef struct pmemoid {
+	uint64_t pool;
+	uint64_t off;
+} PMEMoid;
+
+/*
+ * PMEMmutex is a pthread_mutex_t designed to live in a pmem-resident
+ * data structure.  Unlike the rest of the things in pmem, this is a
+ * volatile lock so any persistent state is ignored and the lock
+ * re-initializes itself to a fresh, DRAM-resident lock each time
+ * the program is run.
+ */
+typedef struct pmemmutex {
+	uint64_t *idp;		/* points at our "run ID" */
+	uint64_t id;		/* matches *idp is mutexp is initialized */
+	pthread_mutex_t *mutexp;
+} PMEMmutex;
+
 PMEMoid pmemobjs_root(PMEMobjs *pop);
 void *pmemobjs_root_direct(PMEMobjs *pop);
+int pmemobjs_set_root(PMEMoid oid);
 
 int pmemobjs_begin(PMEMobjs *pop, jmp_buf env);
-int pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, pthread_mutex_t *mutexp);
+int pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, PMEMmutex *mutexp);
 int pmemobjs_commit(void);
 int pmemobjs_abort(int errnum);
 
 PMEMoid pmemobjs_alloc(size_t size);
+PMEMoid pmemobjs_zalloc(size_t size);
 int pmemobjs_free(PMEMoid oid);
 
 void *pmemobjs_direct(PMEMoid oid);

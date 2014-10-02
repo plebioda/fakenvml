@@ -225,6 +225,15 @@ pmemobjs_root_direct(PMEMobjs *pop)
 }
 
 /*
+ * pmemobjs_set_root -- set the root object
+ */
+int
+pmemobjs_set_root(PMEMoid oid)
+{
+	return 0;
+}
+
+/*
  * pmemobjs_begin -- begin a transaction
  */
 int
@@ -237,7 +246,7 @@ pmemobjs_begin(PMEMobjs *pop, jmp_buf env)
  * pmemobjs_begin -- begin a transaction with a mutex
  */
 int
-pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, pthread_mutex_t *mutexp)
+pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, PMEMmutex *mutexp)
 {
 	return 0;
 }
@@ -265,6 +274,17 @@ pmemobjs_abort(int errnum)
  */
 PMEMoid
 pmemobjs_alloc(size_t size)
+{
+	PMEMoid n = { 0 };
+
+	return n;
+}
+
+/*
+ * pmemobjs_zalloc -- transactional allocate, zeroed, implicit tid
+ */
+PMEMoid
+pmemobjs_zalloc(size_t size)
 {
 	PMEMoid n = { 0 };
 
