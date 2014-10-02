@@ -354,6 +354,17 @@ pmemobjs_zalloc(size_t size)
 }
 
 /*
+ * pmemobjs_strdup -- transactional strdup of non-pmem string, implicit tid
+ */
+PMEMoid
+pmemobjs_strdup(const char *s)
+{
+	PMEMoid n = { 0 };
+
+	return n;
+}
+
+/*
  * pmemobjs_free -- transactional free, implicit tid
  */
 int

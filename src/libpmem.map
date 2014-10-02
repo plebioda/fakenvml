@@ -52,13 +52,14 @@ libpmem.so {
 		pmemobjs_memcpy;
 		pmemobjs_mutex_lock;
 		pmemobjs_mutex_unlock;
-		pmemobjs_rwlock_rdlock;
-		pmemobjs_rwlock_wrlock;
-		pmemobjs_rwlock_unlock;
 		pmemobjs_nulloid;
 		pmemobjs_root;
 		pmemobjs_root_direct;
 		pmemobjs_root_resize;
+		pmemobjs_rwlock_rdlock;
+		pmemobjs_rwlock_unlock;
+		pmemobjs_rwlock_wrlock;
+		pmemobjs_strdup;
 		pmemobjs_unmap;
 		pmemobjs_zalloc;
 		pmemblk_map;

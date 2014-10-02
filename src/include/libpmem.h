@@ -126,6 +126,7 @@ int pmemobjs_abort(int errnum);
 
 PMEMoid pmemobjs_alloc(size_t size);
 PMEMoid pmemobjs_zalloc(size_t size);
+PMEMoid pmemobjs_strdup(const char *s);
 int pmemobjs_free(PMEMoid oid);
 
 void *pmemobjs_direct(PMEMoid oid);

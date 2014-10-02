@@ -1,0 +1,14 @@
+Linux NVM Library
+
+This is src/test/objs_list_strdup/README.
+
+This directory contains a simple linked list test for pmemobjs.
+
+Run:
+	objs_list_strdup file [string...]
+
+to access a pmemobjs linked list data structure in the given file.
+Any values provided should be strings which will be added to the
+list.  The special strings "f" is used to free the entire list at that
+point and continue from there with an empty list.  The program
+prints the current list before exiting.
