@@ -41,7 +41,7 @@
 /* struct node is the element in the linked list */
 struct node {
 	PMEMoid next;		/* object ID of next struct node */
-	int data;
+	int value;		/* payload for this node */
 };
 
 /* struct base keeps track of the beginning of the list */
@@ -54,7 +54,7 @@ struct base {
  * insert -- allocate a new node, and prepend it to the list
  */
 struct node *
-insert(PMEMobjs *pop, int d)
+insert(PMEMobjs *pop, int val)
 {
 	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
@@ -91,7 +91,7 @@ insert(PMEMobjs *pop, int d)
 	 *
 	 *	newnode is the struct node *. Fetching from it works
 	 *	as expected, so you could write, for example:
-	 *		d = newnode->d;
+	 *		val = newnode->val;
 	 *	to read from newnode.  You just can't store the
 	 *	pointer newnode somewhere persistent and expect it
 	 *	to work next time the program runs -- only object IDs
@@ -101,7 +101,7 @@ insert(PMEMobjs *pop, int d)
 	 *	non-transactional pointer to newoid was returned
 	 *	which means you can also store to it, but no undo
 	 *	log is kept.  So when you do:
-	 *		newnode->d = d;
+	 *		newnode->val = val;
 	 *	the value is stored directly in newnode, and if
 	 *	the transaction aborts, the newnode allocation is
 	 *	undone so there's no need to worry about rolling back
@@ -114,7 +114,7 @@ insert(PMEMobjs *pop, int d)
 	 *	transactional store via the PMEMOBJS_SET() macro.
 	 */
 
-	newnode->data = d;
+	newnode->value = val;
 	newnode->next = bp->head;
 	PMEMOBJS_SET(bp->head, newoid);
 
@@ -123,21 +123,45 @@ insert(PMEMobjs *pop, int d)
 	return newnode;
 }
 
+/*
+ * print -- print the entire list
+ */
+void
+print(PMEMobjs *pop)
+{
+	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+
+	pmemobjs_mutex_lock(&bp->mutex);
+
+	struct node *np = pmemobjs_direct(bp->head);
+
+	while (np != NULL) {
+		OUT("Node: %d", np->value);
+		np = pmemobjs_direct(np->next);
+	}
+
+	pmemobjs_mutex_unlock(&bp->mutex);
+}
+
 int
 main(int argc, char *argv[])
 {
 	START(argc, argv, "objs_linked_list");
 
-	if (argc !=  2)
-		FATAL("usage: %s file", argv[0]);
+	if (argc < 2)
+		FATAL("usage: %s file [val...]", argv[0]);
 
 	int fd = OPEN(argv[1], O_RDWR);
 
 	PMEMobjs *pop = pmemobjs_map(fd);
 
-	struct node *np = insert(pop, 1);
+	/* if any values were provided, add them to the list */
+	for (int i = 2; i < argc; i++)
+		if (insert(pop, atoi(argv[i])) == NULL)
+			ERR("!insert on value \"%s\"", argv[i]);
 
-	ASSERT(np != NULL);
+	/* print the entire list */
+	print(pop);
 
 	pmemobjs_unmap(pop);
 

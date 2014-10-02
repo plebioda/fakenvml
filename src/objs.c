@@ -205,6 +205,24 @@ pmemobjs_check(const char *path)
 }
 
 /*
+ * pmemobjs_mutex_lock -- lock a PMEMmutex
+ */
+int
+pmemobjs_mutex_lock(PMEMmutex *mutexp)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_mutex_unlock -- unlock a PMEMmutex
+ */
+int
+pmemobjs_mutex_unlock(PMEMmutex *mutexp)
+{
+	return 0;
+}
+
+/*
  * pmemobjs_root -- return root object ID
  */
 PMEMoid

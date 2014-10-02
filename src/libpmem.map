@@ -50,6 +50,8 @@ libpmem.so {
 		pmemobjs_free;
 		pmemobjs_map;
 		pmemobjs_memcpy;
+		pmemobjs_mutex_lock;
+		pmemobjs_mutex_unlock;
 		pmemobjs_nulloid;
 		pmemobjs_root;
 		pmemobjs_root_direct;
