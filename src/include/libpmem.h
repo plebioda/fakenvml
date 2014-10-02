@@ -98,12 +98,22 @@ typedef struct pmemoid {
  */
 typedef struct pmemmutex {
 	uint64_t *idp;		/* points at our "run ID" */
-	uint64_t id;		/* matches *idp is mutexp is initialized */
+	uint64_t id;		/* matches *idp if mutexp is initialized */
 	pthread_mutex_t *mutexp;
 } PMEMmutex;
 
+typedef struct pmemrwlock {
+	uint64_t *idp;		/* points at our "run ID" */
+	uint64_t id;		/* matches *idp if rwlockp is initialized */
+	pthread_mutex_t *rwlockp;
+} PMEMrwlock;
+
 int pmemobjs_mutex_lock(PMEMmutex *mutexp);
 int pmemobjs_mutex_unlock(PMEMmutex *mutexp);
+int pmemobjs_rwlock_rdlock(PMEMrwlock *rwlockp);
+int pmemobjs_rwlock_wrlock(PMEMrwlock *rwlockp);
+int pmemobjs_rwlock_unlock(PMEMrwlock *rwlockp);
+/* XXX all the other locking APIs need to be defined... */
 
 PMEMoid pmemobjs_root(PMEMobjs *pop, size_t size);
 void *pmemobjs_root_direct(PMEMobjs *pop, size_t size);

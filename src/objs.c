@@ -223,6 +223,33 @@ pmemobjs_mutex_unlock(PMEMmutex *mutexp)
 }
 
 /*
+ * pmemobjs_rwlock_rdlock -- read lock a PMEMrwlock
+ */
+int
+pmemobjs_rwlock_rdlock(PMEMrwlock *rwlockp)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_rwlock_wrlock -- write lock a PMEMrwlock
+ */
+int
+pmemobjs_rwlock_wrlock(PMEMrwlock *rwlockp)
+{
+	return 0;
+}
+
+/*
+ * pmemobjs_rwlock_unlock -- unlock a PMEMrwlock
+ */
+int
+pmemobjs_rwlock_unlock(PMEMrwlock *rwlockp)
+{
+	return 0;
+}
+
+/*
  * pmemobjs_root -- return root object ID
  */
 PMEMoid
@@ -245,7 +272,7 @@ pmemobjs_root(PMEMobjs *pop, size_t size)
  * object almost certainly needs to contain a lock to make updates to it
  * MT-safe.
  *
- * The argument "size" is used to determine the size of the root object, 
+ * The argument "size" is used to determine the size of the root object,
  * the first time this is called, but after that the object already exists
  * and size is used to verify the caller knows the correct size.
  */
