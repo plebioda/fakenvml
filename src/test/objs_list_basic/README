@@ -5,6 +5,10 @@ This is src/test/objs_list_basic/README.
 This directory contains a simple linked list test for pmemobjs.
 
 Run:
-	objs_list_basic file
+	objs_list_basic file [val...]
 
-to create a pmemobjs linked list data structure in the given file.
+to access a pmemobjs linked list data structure in the given file.
+Any values provided should be integers which will be added to the
+list.  The special val "f" is used to free the entire list at that
+point and continue from there with an empty list.  The program
+prints the current list before exiting.
