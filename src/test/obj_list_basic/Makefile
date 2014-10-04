@@ -31,13 +31,13 @@
 #
 
 #
-# src/test/objs_list_basic/Makefile -- build objs_list_basic unit test
+# src/test/obj_list_basic/Makefile -- build obj_list_basic unit test
 #
-TARGET = objs_list_basic
-OBJS = objs_list_basic.o
+TARGET = obj_list_basic
+OBJS = obj_list_basic.o
 
 include ../Makefile.inc
 
 LIBS += -lpmem
 
-objs_list_basic.o: objs_list_basic.c
+obj_list_basic.o: obj_list_basic.c

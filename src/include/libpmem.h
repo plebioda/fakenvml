@@ -59,7 +59,7 @@ extern "C" {
 /*
  * opaque types internal to libpmem...
  */
-typedef struct pmemobjs PMEMobjs;
+typedef struct pmemobjpool PMEMobjpool;
 typedef struct pmemblk PMEMblk;
 typedef struct pmemlog PMEMlog;
 
@@ -76,13 +76,17 @@ void pmem_drain(void);
 /*
  * support for memory allocation and transactions in PMEM...
  */
-#define	PMEMOBJS_MIN_POOL ((size_t)(1024 * 1024 * 2)) /* min pool size: 2MB */
-PMEMobjs *pmemobjs_map(int fd);
-void pmemobjs_unmap(PMEMobjs *pop);
-int pmemobjs_check(const char *path);
+#define	PMEMOBJ_MIN_POOL ((size_t)(1024 * 1024 * 2)) /* min pool size: 2MB */
+
+/* path can be "/file/one:/file/two" to force mirrored operation */
+PMEMobjpool *pmemobj_pool_open(const char *path);
+PMEMobjpool *pmemobj_pool_open_mirrored(const char *path1, const char *path2);
+void pmemobj_pool_close(PMEMobjpool *pop);
+int pmemobj_pool_check(const char *path);
+int pmemobj_pool_check_mirrored(const char *path1, const char *path2);
 
 /*
- * Object IDs used with pmemobjs...
+ * Object IDs used with pmemobj...
  */
 typedef struct pmemoid {
 	uint64_t pool;
@@ -108,36 +112,76 @@ typedef struct pmemrwlock {
 	pthread_mutex_t *rwlockp;
 } PMEMrwlock;
 
-int pmemobjs_mutex_lock(PMEMmutex *mutexp);
-int pmemobjs_mutex_unlock(PMEMmutex *mutexp);
-int pmemobjs_rwlock_rdlock(PMEMrwlock *rwlockp);
-int pmemobjs_rwlock_wrlock(PMEMrwlock *rwlockp);
-int pmemobjs_rwlock_unlock(PMEMrwlock *rwlockp);
-/* XXX all the other locking APIs need to be defined... */
+typedef struct pmemcond {
+	uint64_t *idp;		/* points at our "run ID" */
+	uint64_t id;		/* matches *idp if condp is initialized */
+	pthread_cond_t *condp;
+} PMEMcond;
 
-PMEMoid pmemobjs_root(PMEMobjs *pop, size_t size);
-void *pmemobjs_root_direct(PMEMobjs *pop, size_t size);
-int pmemobjs_root_resize(PMEMobjs *pop, size_t size);
+int pmemobj_mutex_init(PMEMmutex *mutexp);
+int pmemobj_mutex_lock(PMEMmutex *mutexp);
+int pmemobj_mutex_unlock(PMEMmutex *mutexp);
 
-int pmemobjs_begin(PMEMobjs *pop, jmp_buf env);
-int pmemobjs_begin_mutex(PMEMobjs *pop, jmp_buf env, PMEMmutex *mutexp);
-int pmemobjs_commit(void);
-int pmemobjs_abort(int errnum);
+int pmemobj_rwlock_init(PMEMrwlock *rwlockp);
+int pmemobj_rwlock_rdlock(PMEMrwlock *rwlockp);
+int pmemobj_rwlock_wrlock(PMEMrwlock *rwlockp);
+int pmemobj_rwlock_timedrdlock(PMEMrwlock *restrict rwlockp,
+		const struct timespec *restrict abs_timeout);
+int pmemobj_rwlock_timedwrlock(PMEMrwlock *restrict rwlockp,
+		const struct timespec *restrict abs_timeout);
+int pmemobj_rwlock_tryrdlock(PMEMrwlock *rwlockp);
+int pmemobj_rwlock_trywrlock(PMEMrwlock *rwlockp);
+int pmemobj_rwlock_unlock(PMEMrwlock *rwlockp);
 
-PMEMoid pmemobjs_alloc(size_t size);
-PMEMoid pmemobjs_zalloc(size_t size);
-PMEMoid pmemobjs_strdup(const char *s);
-int pmemobjs_free(PMEMoid oid);
+int pmemobj_cond_init(PMEMcond *condp);
+int pmemobj_cond_broadcast(PMEMcond *condp);
+int pmemobj_cond_signal(PMEMcond *condp);
+int pmemobj_cond_timedwait(PMEMcond *restrict condp,
+		PMEMmutex *restrict mutexp,
+		const struct timespec *restrict abstime);
+int pmemobj_cond_wait(PMEMcond *condp,
+		PMEMmutex *restrict mutexp);
 
-void *pmemobjs_direct(PMEMoid oid);
-void *pmemobjs_direct_ntx(PMEMoid oid);
+PMEMoid pmemobj_root(PMEMobjpool *pop, size_t size);
+void *pmemobj_root_direct(PMEMobjpool *pop, size_t size);
+int pmemobj_root_resize(PMEMobjpool *pop, size_t size);
 
-int pmemobjs_nulloid(PMEMoid oid);
+int pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env);
+int pmemobj_tx_begin_lock(PMEMobjpool *pop, jmp_buf env, PMEMmutex *mutexp);
+int pmemobj_tx_begin_wrlock(PMEMobjpool *pop, jmp_buf env, PMEMrwlock *rwlockp);
+int pmemobj_tx_commit(void);
+int pmemobj_tx_commit_tid(int tid);
+int pmemobj_tx_commit_multi(int tid, ...);
+int pmemobj_tx_commit_multiv(int tids[]);
+int pmemobj_tx_abort(int errnum);
+int pmemobj_tx_abort_tid(int tid, int errnum);
 
-int pmemobjs_memcpy(void *dstp, void *srcp, size_t size);
+PMEMoid pmemobj_alloc(size_t size);
+PMEMoid pmemobj_zalloc(size_t size);
+PMEMoid pmemobj_realloc(PMEMoid oid, size_t size);
+PMEMoid pmemobj_aligned_alloc(size_t alignment, size_t size);
+PMEMoid pmemobj_strdup(const char *s);
+int pmemobj_free(PMEMoid oid);
 
-#define	PMEMOBJS_SET(lhs, rhs)\
-	pmemobjs_memcpy((void *)&(lhs), (void *)&(rhs), sizeof (lhs))
+PMEMoid pmemobj_alloc_tid(int tid, size_t size);
+PMEMoid pmemobj_zalloc_tid(int tid, size_t size);
+PMEMoid pmemobj_realloc_tid(int tid, PMEMoid oid, size_t size);
+PMEMoid pmemobj_aligned_alloc_tid(int tid, size_t alignment, size_t size);
+PMEMoid pmemobj_strdup_tid(int tid, const char *s);
+int pmemobj_free_tid(int tid, PMEMoid oid);
+
+void *pmemobj_direct(PMEMoid oid);
+void *pmemobj_direct_ntx(PMEMoid oid);
+
+int pmemobj_nulloid(PMEMoid oid);
+
+int pmemobj_memcpy(void *dstp, void *srcp, size_t size);
+int pmemobj_memcpy_tid(int tid, void *dstp, void *srcp, size_t size);
+
+#define	PMEMOBJ_SET(lhs, rhs)\
+	pmemobj_memcpy((void *)&(lhs), (void *)&(rhs), sizeof (lhs))
+#define	PMEMOBJ_SET_TID(tid, lhs, rhs)\
+	pmemobj_memcpy_tid(tid, (void *)&(lhs), (void *)&(rhs), sizeof (lhs))
 
 /*
  * support for arrays of atomically-writable blocks...

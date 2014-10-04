@@ -31,17 +31,17 @@
  */
 
 /*
- * objs.h -- internal definitions for objs module
+ * obj.h -- internal definitions for obj module
  */
 
-/* attributes of the objs memory pool format for the pool header */
-#define	OBJS_HDR_SIG "PM_OBJS"	/* must be 8 bytes including '\0' */
-#define	OBJS_FORMAT_MAJOR 1
-#define	OBJS_FORMAT_COMPAT 0x0000
-#define	OBJS_FORMAT_INCOMPAT 0x0000
-#define	OBJS_FORMAT_RO_COMPAT 0x0000
+/* attributes of the obj memory pool format for the pool header */
+#define	OBJ_HDR_SIG "OBJPOOL"	/* must be 8 bytes including '\0' */
+#define	OBJ_FORMAT_MAJOR 1
+#define	OBJ_FORMAT_COMPAT 0x0000
+#define	OBJ_FORMAT_INCOMPAT 0x0000
+#define	OBJ_FORMAT_RO_COMPAT 0x0000
 
-struct pmemobjs {
+struct pmemobjpool {
 	struct pool_hdr hdr;	/* memory pool header */
 
 	/* root info for on-media format... */
@@ -60,7 +60,7 @@ struct pmemobjs {
 #define	PMEMOID_INTERNAL_ALIGN 256
 
 /* info kept by the library for each allocated object */
-struct pmemoid_header {
+struct objheader {
 	uint64_t size;		/* requested object size */
 	uint64_t actual_size;	/* actual object size */
 	uint64_t flags;

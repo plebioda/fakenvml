@@ -1,4 +1,3 @@
-#!/bin/bash -e
 #
 # Copyright (c) 2014, Intel Corporation
 #
@@ -32,21 +31,13 @@
 #
 
 #
-# src/test/objs_list_basic/TEST0 -- unit test for objs_list_basic
+# src/test/obj_list_strdup/Makefile -- build obj_list_strdup unit test
 #
-export UNITTEST_NAME=objs_list_basic/TEST0
-export UNITTEST_NUM=0
+TARGET = obj_list_strdup
+OBJS = obj_list_strdup.o
 
-# standard unit test setup
-. ../unittest/unittest.sh
+include ../Makefile.inc
 
-setup
+LIBS += -lpmem
 
-rm -f $DIR/testfile1
-truncate -s 1G $DIR/testfile1
-expect_normal_exit ./objs_list_basic$EXESUFFIX $DIR/testfile1 5 4 3 2 1
-rm $DIR/testfile1
-
-check
-
-pass
+obj_list_strdup.o: obj_list_strdup.c

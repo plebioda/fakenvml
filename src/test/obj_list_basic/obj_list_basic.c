@@ -31,9 +31,9 @@
  */
 
 /*
- * objs_list_basic.c -- linked list unit test for pmemobjs
+ * obj_list_basic.c -- linked list unit test for pmemobj
  *
- * usage: objs_list_basic file [val...]
+ * usage: obj_list_basic file [val...]
  *
  * The "val" arguments are integers, which are inserted at the beginning
  * of the list.  If the special val "f" is ever encountered, the list
@@ -58,9 +58,9 @@ struct base {
  * insert -- allocate a new node, and prepend it to the list
  */
 struct node *
-insert(PMEMobjs *pop, int val)
+insert(PMEMobjpool *pop, int val)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
 	if (setjmp(env)) {
@@ -68,9 +68,9 @@ insert(PMEMobjs *pop, int val)
 		 * If we get here, the transaction was aborted due to an
 		 * error.  For this simple example, the possible errors would
 		 * be an error trying to grab the mutex during the call to
-		 * pmemobjs_begin_mutex() below, out of memory during the
-		 * call to pmemobjs_alloc() below, or out of undo log space
-		 * during the call to PMEMOBJS_SET() below.
+		 * pmemobj_begin_mutex() below, out of memory during the
+		 * call to pmemobj_alloc() below, or out of undo log space
+		 * during the call to PMEMOBJ_SET() below.
 		 *
 		 * errno is set by library in this case.
 		 *
@@ -82,11 +82,11 @@ insert(PMEMobjs *pop, int val)
 	}
 
 	/* begin a transaction, also acquiring the mutex for the list */
-	pmemobjs_begin_mutex(pop, env, &bp->mutex);
+	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
 	/* allocate the new node to be inserted */
-	PMEMoid newoid = pmemobjs_alloc(sizeof (struct node));
-	struct node *newnode = pmemobjs_direct_ntx(newoid);
+	PMEMoid newoid = pmemobj_alloc(sizeof (struct node));
+	struct node *newnode = pmemobj_direct_ntx(newoid);
 
 	/*
 	 * Now we have two ways to refer to the new node:
@@ -103,7 +103,7 @@ insert(PMEMobjs *pop, int val)
 	 *	to work next time the program runs -- only object IDs
 	 *	work across program runs.
 	 *
-	 *	Since pmemobjs_direct_ntx() was used, a
+	 *	Since pmemobj_direct_ntx() was used, a
 	 *	non-transactional pointer to newoid was returned
 	 *	which means you can also store to it, but no undo
 	 *	log is kept.  So when you do:
@@ -117,15 +117,15 @@ insert(PMEMobjs *pop, int val)
 	 *	that's not a new allocation that was part of this
 	 *	transaction (bp already existed), so you cannot
 	 *	store directly to bp->head, you must use the
-	 *	transactional store via the PMEMOBJS_SET() macro.
+	 *	transactional store via the PMEMOBJ_SET() macro.
 	 */
 
 	newnode->value = val;
 	newnode->next = bp->head;
-	PMEMOBJS_SET(bp->head, newoid);
+	PMEMOBJ_SET(bp->head, newoid);
 
 	/* commit the transaction (also drops the mutex when complete) */
-	pmemobjs_commit();
+	pmemobj_tx_commit();
 
 	return newnode;
 }
@@ -134,32 +134,32 @@ insert(PMEMobjs *pop, int val)
  * print -- print the entire list
  */
 void
-print(PMEMobjs *pop)
+print(PMEMobjpool *pop)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 
 	OUT("list contains:");
 
 	/* protect the loop below by acquiring the list mutex */
-	pmemobjs_mutex_lock(&bp->mutex);
+	pmemobj_mutex_lock(&bp->mutex);
 
-	struct node *np = pmemobjs_direct(bp->head);
+	struct node *np = pmemobj_direct(bp->head);
 
 	while (np != NULL) {
 		OUT("    value %d", np->value);
-		np = pmemobjs_direct(np->next);
+		np = pmemobj_direct(np->next);
 	}
 
-	pmemobjs_mutex_unlock(&bp->mutex);
+	pmemobj_mutex_unlock(&bp->mutex);
 }
 
 /*
  * freelist -- free the entire list
  */
 int
-freelist(PMEMobjs *pop)
+freelist(PMEMobjpool *pop)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
 	if (setjmp(env)) {
@@ -168,28 +168,28 @@ freelist(PMEMobjs *pop)
 	}
 
 	/* begin a transaction, also acquiring the mutex for the list */
-	pmemobjs_begin_mutex(pop, env, &bp->mutex);
+	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
 	/*
-	 * Since pmemobjs_free() operates on the object ID, use "noid"
+	 * Since pmemobj_free() operates on the object ID, use "noid"
 	 * to loop through the list of objects and free them, and use "np"
 	 * for direct access to the np->next field while looping.
 	 */
 	PMEMoid noid = bp->head;
-	struct node *np = pmemobjs_direct(noid);
+	struct node *np = pmemobj_direct(noid);
 
 	/* loop through the list, freeing each node */
 	while (np != NULL) {
 		PMEMoid nextnoid = np->next;
 
-		pmemobjs_free(noid);
+		pmemobj_free(noid);
 
 		noid = nextnoid;
-		np = pmemobjs_direct(noid);
+		np = pmemobj_direct(noid);
 	}
 
 	/* commit the transaction, all the frees become permanent now */
-	pmemobjs_commit();
+	pmemobj_tx_commit();
 
 	return 0;
 }
@@ -197,15 +197,12 @@ freelist(PMEMobjs *pop)
 int
 main(int argc, char *argv[])
 {
-	START(argc, argv, "objs_list_basic");
+	START(argc, argv, "obj_list_basic");
 
 	if (argc < 2)
 		FATAL("usage: %s file [val...]", argv[0]);
 
-	int fd = OPEN(argv[1], O_RDWR);
-
-	/* map the "object store" memory pool */
-	PMEMobjs *pop = pmemobjs_map(fd);
+	PMEMobjpool *pop = pmemobj_pool_open(argv[1]);
 
 	/* if any values were provided, add them to the list */
 	for (int i = 2; i < argc; i++)
@@ -227,7 +224,7 @@ main(int argc, char *argv[])
 	print(pop);
 
 	/* all done */
-	pmemobjs_unmap(pop);
+	pmemobj_pool_close(pop);
 
 	DONE(NULL);
 }

@@ -35,8 +35,8 @@
 #
 # Makefile -- build all unit tests
 #
-TEST = objs_list_basic\
-       objs_list_strdup
+TEST = obj_list_basic\
+       obj_list_strdup
 
 all     : TARGET = all
 clean   : TARGET = clean

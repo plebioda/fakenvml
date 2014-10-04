@@ -31,9 +31,9 @@
  */
 
 /*
- * objs_list_strdup.c -- linked list unit test for pmemobjs
+ * obj_list_strdup.c -- linked list unit test for pmemobj
  *
- * usage: objs_list_strdup file [string...]
+ * usage: obj_list_strdup file [string...]
  *
  * The "val" arguments are strings, which are inserted at the beginning
  * of the list.  If the special string "f" is ever encountered, the list
@@ -58,94 +58,88 @@ struct base {
  * insert -- allocate a new node, and prepend it to the list
  */
 struct node *
-insert(PMEMobjs *pop, const char *str)
+insert(PMEMobjpool *pop, const char *str)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
-	if (setjmp(env)) {
+	if (setjmp(env) == 0) {
+		/* try the transaction... */
+		pmemobj_tx_begin_lock(pop, env, &bp->mutex);
+
+		/* allocate the new node to be inserted */
+		PMEMoid newoid = pmemobj_alloc(sizeof (struct node));
+		struct node *newnode = pmemobj_direct_ntx(newoid);
+
+		/* fill it in and link it in */
+		newnode->str = pmemobj_strdup(str);
+		newnode->next = bp->head;
+		PMEMOBJ_SET(bp->head, newoid);
+
+		pmemobj_tx_commit();
+
+		return newnode;
+	} else {
 		/* transaction aborted */
 		return NULL;
 	}
-
-	/* begin a transaction, also acquiring the mutex for the list */
-	pmemobjs_begin_mutex(pop, env, &bp->mutex);
-
-	/* allocate the new node to be inserted */
-	PMEMoid newoid = pmemobjs_alloc(sizeof (struct node));
-	struct node *newnode = pmemobjs_direct_ntx(newoid);
-
-	newnode->str = pmemobjs_strdup(str);
-	newnode->next = bp->head;
-	PMEMOBJS_SET(bp->head, newoid);
-
-	/* commit the transaction (also drops the mutex when complete) */
-	pmemobjs_commit();
-
-	return newnode;
 }
 
 /*
  * print -- print the entire list
  */
 void
-print(PMEMobjs *pop)
+print(PMEMobjpool *pop)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 
 	OUT("list contains:");
 
 	/* protect the loop below by acquiring the list mutex */
-	pmemobjs_mutex_lock(&bp->mutex);
+	pmemobj_mutex_lock(&bp->mutex);
 
-	struct node *np = pmemobjs_direct(bp->head);
+	struct node *np = pmemobj_direct(bp->head);
 
 	while (np != NULL) {
-		OUT("    value \"%s\"", (char *)pmemobjs_direct(np->str));
-		np = pmemobjs_direct(np->next);
+		OUT("    value \"%s\"", (char *)pmemobj_direct(np->str));
+		np = pmemobj_direct(np->next);
 	}
 
-	pmemobjs_mutex_unlock(&bp->mutex);
+	pmemobj_mutex_unlock(&bp->mutex);
 }
 
 /*
  * freelist -- free the entire list
  */
 int
-freelist(PMEMobjs *pop)
+freelist(PMEMobjpool *pop)
 {
-	struct base *bp = pmemobjs_root_direct(pop, sizeof (*bp));
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
-	if (setjmp(env)) {
-		/* transaction aborted, errno set by library */
+	if (setjmp(env) == 0) {
+		/* try the transaction... */
+		pmemobj_tx_begin_lock(pop, env, &bp->mutex);
+
+		PMEMoid noid = bp->head;
+		struct node *np = pmemobj_direct(noid);
+
+		/* loop through the list, freeing each node */
+		while (np != NULL) {
+			PMEMoid nextnoid = np->next;
+
+			pmemobj_free(np->str);
+			pmemobj_free(noid);
+
+			noid = nextnoid;
+			np = pmemobj_direct(noid);
+		}
+
+		pmemobj_tx_commit();
+	} else {
+		/* transaction aborted */
 		return -1;
 	}
-
-	/* begin a transaction, also acquiring the mutex for the list */
-	pmemobjs_begin_mutex(pop, env, &bp->mutex);
-
-	/*
-	 * Since pmemobjs_free() operates on the object ID, use "noid"
-	 * to loop through the list of objects and free them, and use "np"
-	 * for direct access to the np->next field while looping.
-	 */
-	PMEMoid noid = bp->head;
-	struct node *np = pmemobjs_direct(noid);
-
-	/* loop through the list, freeing each node */
-	while (np != NULL) {
-		PMEMoid nextnoid = np->next;
-
-		pmemobjs_free(np->str);
-		pmemobjs_free(noid);
-
-		noid = nextnoid;
-		np = pmemobjs_direct(noid);
-	}
-
-	/* commit the transaction, all the frees become permanent now */
-	pmemobjs_commit();
 
 	return 0;
 }
@@ -153,15 +147,12 @@ freelist(PMEMobjs *pop)
 int
 main(int argc, char *argv[])
 {
-	START(argc, argv, "objs_list_strdup");
+	START(argc, argv, "obj_list_strdup");
 
 	if (argc < 2)
 		FATAL("usage: %s file [string...]", argv[0]);
 
-	int fd = OPEN(argv[1], O_RDWR);
-
-	/* map the "object store" memory pool */
-	PMEMobjs *pop = pmemobjs_map(fd);
+	PMEMobjpool *pop = pmemobj_pool_open(argv[1]);
 
 	/* if any values were provided, add them to the list */
 	for (int i = 2; i < argc; i++)
@@ -181,7 +172,7 @@ main(int argc, char *argv[])
 	print(pop);
 
 	/* all done */
-	pmemobjs_unmap(pop);
+	pmemobj_pool_close(pop);
 
 	DONE(NULL);
 }
