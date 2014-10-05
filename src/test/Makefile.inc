@@ -36,9 +36,11 @@
 # These defaults apply to most unit tests.  The individual Makefile
 # for each unit test overrides the defaults as necessary.
 #
-LIBS = ../unittest/libut.a -L../../debug -luuid -pthread
-STATIC_DEBUG_LIBS = ../unittest/libut.a ../../debug/libpmem.a -luuid -pthread
-STATIC_NONDEBUG_LIBS = ../unittest/libut.a ../../nondebug/libpmem.a -luuid -pthread
+LIBS = ../unittest/libut.a -L../../debug -luuid -pthread -lrt
+STATIC_DEBUG_LIBS =\
+	../unittest/libut.a ../../debug/libpmem.a -luuid -pthread -lrt
+STATIC_NONDEBUG_LIBS =\
+	../unittest/libut.a ../../nondebug/libpmem.a -luuid -pthread -lrt
 STATIC_DEBUG_LIBS_DEPS = ../unittest/libut.a ../../debug/libpmem.a
 STATIC_NONDEBUG_LIBS_DEPS = ../unittest/libut.a ../../nondebug/libpmem.a
 INCS = -I../unittest -I../../include

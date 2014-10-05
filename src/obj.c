@@ -57,19 +57,16 @@
 
 static uint64_t Runid;		/* unique "run ID" for this program run */
 
-static unsigned Nexttid;
-
-static __thread struct tx {
-	struct tx *next;	/* outer transaction when nested */
-	int tid;		/* ID of this transaction */
+struct tx {
 	int valid_env;
 	jmp_buf env;
+	PMEMmutex *mutexp;
+	PMEMmutex *rwlockp;
 	/* one of these is pushed for each operation in a transaction */
 	struct txop {
-		struct txop *next;
+		struct txop *head;
+		struct txop *tail;
 		enum {
-			TXOP_LOCK,	/* arg1 is the PMEMmutex */
-			TXOP_WRLOCK,	/* arg1 is the PMEMrwlock */
 			TXOP_ALLOC,	/* arg1 is the objheader */
 			TXOP_FREE,	/* arg1 is the objheader */
 			TXOP_SET,	/* arg1 is the addr, arg1 is the len */
@@ -77,7 +74,12 @@ static __thread struct tx {
 		void *arg1;
 		void *arg2;
 	} *txops;
-} *Curtx;			/* current transaction for this thread */
+};
+
+static __thread struct txinfo {
+	struct txinfo *next;	/* outer transaction when nested */
+	struct tx *txp;
+} *Curthread_txinfop;		/* current transaction for this thread */
 
 /*
  * obj_init -- load-time initialization for obj
@@ -104,21 +106,6 @@ obj_init(void)
 }
 
 /*
- * newtid -- (internal) generate a new tid
- */
-static int
-newtid(void)
-{
-	int retval;
-
-	do {
-		retval = __sync_fetch_and_add(&Nexttid, 1);
-	} while (retval == 0);
-
-	return retval;
-}
-
-/*
  * pmemobj_pool_open -- open a transactional memory pool
  */
 PMEMobjpool *
@@ -140,7 +127,7 @@ pmemobj_pool_open(const char *path)
 	}
 
 	int fd;
-	if ((fd = open(path, O_RDWR))< 0) {
+	if ((fd = open(path, O_RDWR)) < 0) {
 		LOG(1, "!%s", path);
 		return NULL;
 	}
@@ -678,42 +665,46 @@ pmemobj_root_resize(PMEMobjpool *pop, size_t newsize)
 /*
  * pmemobj_tx_begin -- begin a transaction
  */
-int
+PMEMtid
 pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env)
 {
-	int tid = newtid();
-	struct tx *ntx = zalloc(sizeof (*ntx));
+	struct tx *txp = zalloc(sizeof (*txp));
+	struct txinfo *txinfop = zalloc(sizeof (*txinfop));
 
-	ntx->tid = tid;
 	if (env) {
-		ntx->valid_env = 1;
-		memcpy((void *)&ntx->env, (void *)&env, sizeof (env));
-	} else
-		ntx->valid_env = 0;
-	ntx->txops = NULL;
+		txp->valid_env = 1;
+		memcpy((void *)&txp->env, (void *)&env, sizeof (env));
+	}
 
-	ntx->next = Curtx;
-	Curtx = ntx;
+	txinfop->txp = txp;
+	txinfop->next = Curthread_txinfop;
+	Curthread_txinfop = txinfop;
 
-	return tid;
+	return (PMEMtid)txp;
 }
 
 /*
  * pmemobj_tx_begin_lock -- begin a transaction, locking a mutex
  */
-int
+PMEMtid
 pmemobj_tx_begin_lock(PMEMobjpool *pop, jmp_buf env, PMEMmutex *mutexp)
 {
-	return 0;
+	struct tx *txp = (struct tx *)pmemobj_tx_begin(pop, env);
+	pmemobj_mutex_lock(mutexp);
+	txp->mutexp = mutexp;
+	return (PMEMtid)txp;
 }
 
 /*
  * pmemobj_tx_begin_wrlock -- begin a transaction, write locking an rwlock
  */
-int
+PMEMtid
 pmemobj_tx_begin_wrlock(PMEMobjpool *pop, jmp_buf env, PMEMrwlock *rwlockp)
 {
-	return 0;
+	struct tx *txp = (struct tx *)pmemobj_tx_begin(pop, env);
+	pmemobj_rwlock_lock(rwlockp);
+	txp->rwlockp = rwlockp;
+	return (PMEMtid)txp;
 }
 
 /*
@@ -729,7 +720,7 @@ pmemobj_tx_commit(void)
  * pmemobj_tx_commit_tid -- commit transaction
  */
 int
-pmemobj_tx_commit_tid(int tid)
+pmemobj_tx_commit_tid(PMEMtid tid)
 {
 	return 0;
 }
@@ -740,7 +731,7 @@ pmemobj_tx_commit_tid(int tid)
  * A list of tids is provided varargs-style, terminated by 0
  */
 int
-pmemobj_tx_commit_multi(int tid, ...)
+pmemobj_tx_commit_multi(PMEMtid tid, ...)
 {
 	return 0;
 }
@@ -751,7 +742,7 @@ pmemobj_tx_commit_multi(int tid, ...)
  * A list of tids is provided as an array, terminated by a 0 entry
  */
 int
-pmemobj_tx_commit_multiv(int tids[])
+pmemobj_tx_commit_multiv(PMEMtid tids[])
 {
 	return 0;
 }
@@ -769,7 +760,7 @@ pmemobj_tx_abort(int errnum)
  * pmemobj_tx_abort_tid -- abort transaction
  */
 int
-pmemobj_tx_abort_tid(int tid, int errnum)
+pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 {
 	return 0;
 }
@@ -855,7 +846,7 @@ pmemobj_size(PMEMoid oid)
  * pmemobj_alloc_tid -- transactional allocate
  */
 PMEMoid
-pmemobj_alloc_tid(int tid, size_t size)
+pmemobj_alloc_tid(PMEMtid tid, size_t size)
 {
 	PMEMoid n = { 0 };
 
@@ -866,7 +857,7 @@ pmemobj_alloc_tid(int tid, size_t size)
  * pmemobj_zalloc_tid -- transactional allocate, zeroed
  */
 PMEMoid
-pmemobj_zalloc_tid(int tid, size_t size)
+pmemobj_zalloc_tid(PMEMtid tid, size_t size)
 {
 	PMEMoid n = { 0 };
 
@@ -877,7 +868,7 @@ pmemobj_zalloc_tid(int tid, size_t size)
  * pmemobj_realloc_tid -- transactional realloc
  */
 PMEMoid
-pmemobj_realloc_tid(int tid, PMEMoid oid, size_t size)
+pmemobj_realloc_tid(PMEMtid tid, PMEMoid oid, size_t size)
 {
 	PMEMoid n = { 0 };
 
@@ -888,7 +879,7 @@ pmemobj_realloc_tid(int tid, PMEMoid oid, size_t size)
  * pmemobj_aligned_alloc -- transactional alloc of aligned memory
  */
 PMEMoid
-pmemobj_aligned_alloc_tid(int tid, size_t alignment, size_t size)
+pmemobj_aligned_alloc_tid(PMEMtid tid, size_t alignment, size_t size)
 {
 	PMEMoid n = { 0 };
 
@@ -899,7 +890,7 @@ pmemobj_aligned_alloc_tid(int tid, size_t alignment, size_t size)
  * pmemobj_strdup_tid -- transactional strdup of non-pmem string
  */
 PMEMoid
-pmemobj_strdup_tid(int tid, const char *s)
+pmemobj_strdup_tid(PMEMtid tid, const char *s)
 {
 	PMEMoid n = { 0 };
 
@@ -910,7 +901,7 @@ pmemobj_strdup_tid(int tid, const char *s)
  * pmemobj_free_tid -- transactional free
  */
 int
-pmemobj_free_tid(int tid, PMEMoid oid)
+pmemobj_free_tid(PMEMtid tid, PMEMoid oid)
 {
 	return 0;
 }
@@ -960,7 +951,7 @@ pmemobj_memcpy(void *dstp, void *srcp, size_t size)
  * pmemobj_memcpy_tid -- change a range, making undo log entries
  */
 int
-pmemobj_memcpy_tid(int tid, void *dstp, void *srcp, size_t size)
+pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 {
 	return 0;
 }

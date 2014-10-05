@@ -94,6 +94,11 @@ typedef struct pmemoid {
 } PMEMoid;
 
 /*
+ * transaction ID
+ */
+typedef uintptr_t PMEMtid;
+
+/*
  * PMEMmutex is a pthread_mutex_t designed to live in a pmem-resident
  * data structure.  Unlike the rest of the things in pmem, this is a
  * volatile lock so any persistent state is ignored and the lock
@@ -143,15 +148,17 @@ int pmemobj_cond_wait(PMEMcond *condp,
 void *pmemobj_root_direct(PMEMobjpool *pop, size_t size);
 int pmemobj_root_resize(PMEMobjpool *pop, size_t size);
 
-int pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env);
-int pmemobj_tx_begin_lock(PMEMobjpool *pop, jmp_buf env, PMEMmutex *mutexp);
-int pmemobj_tx_begin_wrlock(PMEMobjpool *pop, jmp_buf env, PMEMrwlock *rwlockp);
+PMEMtid pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env);
+PMEMtid pmemobj_tx_begin_lock(PMEMobjpool *pop,
+		jmp_buf env, PMEMmutex *mutexp);
+PMEMtid pmemobj_tx_begin_wrlock(PMEMobjpool *pop,
+		jmp_buf env, PMEMrwlock *rwlockp);
 int pmemobj_tx_commit(void);
-int pmemobj_tx_commit_tid(int tid);
-int pmemobj_tx_commit_multi(int tid, ...);
-int pmemobj_tx_commit_multiv(int tids[]);
+int pmemobj_tx_commit_tid(PMEMtid tid);
+int pmemobj_tx_commit_multi(PMEMtid tid, ...);
+int pmemobj_tx_commit_multiv(PMEMtid tids[]);
 int pmemobj_tx_abort(int errnum);
-int pmemobj_tx_abort_tid(int tid, int errnum);
+int pmemobj_tx_abort_tid(PMEMtid tid, int errnum);
 
 PMEMoid pmemobj_alloc(size_t size);
 PMEMoid pmemobj_zalloc(size_t size);
@@ -162,12 +169,12 @@ int pmemobj_free(PMEMoid oid);
 
 size_t pmemobj_size(PMEMoid oid);	/* no lock/tx required */
 
-PMEMoid pmemobj_alloc_tid(int tid, size_t size);
-PMEMoid pmemobj_zalloc_tid(int tid, size_t size);
-PMEMoid pmemobj_realloc_tid(int tid, PMEMoid oid, size_t size);
-PMEMoid pmemobj_aligned_alloc_tid(int tid, size_t alignment, size_t size);
-PMEMoid pmemobj_strdup_tid(int tid, const char *s);
-int pmemobj_free_tid(int tid, PMEMoid oid);
+PMEMoid pmemobj_alloc_tid(PMEMtid tid, size_t size);
+PMEMoid pmemobj_zalloc_tid(PMEMtid tid, size_t size);
+PMEMoid pmemobj_realloc_tid(PMEMtid tid, PMEMoid oid, size_t size);
+PMEMoid pmemobj_aligned_alloc_tid(PMEMtid tid, size_t alignment, size_t size);
+PMEMoid pmemobj_strdup_tid(PMEMtid tid, const char *s);
+int pmemobj_free_tid(PMEMtid tid, PMEMoid oid);
 
 void *pmemobj_direct(PMEMoid oid);
 void *pmemobj_direct_ntx(PMEMoid oid);
@@ -175,7 +182,7 @@ void *pmemobj_direct_ntx(PMEMoid oid);
 int pmemobj_nulloid(PMEMoid oid);
 
 int pmemobj_memcpy(void *dstp, void *srcp, size_t size);
-int pmemobj_memcpy_tid(int tid, void *dstp, void *srcp, size_t size);
+int pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size);
 
 #define	PMEMOBJ_SET(lhs, rhs)\
 	pmemobj_memcpy((void *)&(lhs), (void *)&(rhs), sizeof (lhs))
