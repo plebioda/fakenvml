@@ -44,14 +44,40 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdint.h>
+#include <inttypes.h>
 #include <time.h>
 #include <uuid/uuid.h>
 #include <endian.h>
+#include <pthread.h>
 #include <libpmem.h>
 #include "pmem.h"
 #include "util.h"
 #include "out.h"
 #include "obj.h"
+
+static uint64_t Runid;		/* unique "run ID" for this program run */
+
+static unsigned Nexttid;
+
+static __thread struct tx {
+	struct tx *next;	/* outer transaction when nested */
+	int tid;		/* ID of this transaction */
+	int valid_env;
+	jmp_buf env;
+	/* one of these is pushed for each operation in a transaction */
+	struct txop {
+		struct txop *next;
+		enum {
+			TXOP_LOCK,	/* arg1 is the PMEMmutex */
+			TXOP_WRLOCK,	/* arg1 is the PMEMrwlock */
+			TXOP_ALLOC,	/* arg1 is the objheader */
+			TXOP_FREE,	/* arg1 is the objheader */
+			TXOP_SET,	/* arg1 is the addr, arg1 is the len */
+		} op;
+		void *arg1;
+		void *arg2;
+	} *txops;
+} *Curtx;			/* current transaction for this thread */
 
 /*
  * obj_init -- load-time initialization for obj
@@ -65,6 +91,31 @@ obj_init(void)
 	out_init(LOG_PREFIX, LOG_LEVEL_VAR, LOG_FILE_VAR);
 	LOG(3, NULL);
 	util_init();
+
+	struct timespec ts;
+	if (clock_gettime(CLOCK_REALTIME, &ts) < 0) {
+		LOG(1, "!clock_gettime");
+		srandom((unsigned)time(0));
+		Runid = (uint64_t)random();
+	} else {
+		Runid = ts.tv_sec * 1000000000 + ts.tv_nsec;
+	}
+	LOG(4, "Runid %" PRIx64, Runid);
+}
+
+/*
+ * newtid -- (internal) generate a new tid
+ */
+static int
+newtid(void)
+{
+	int retval;
+
+	do {
+		retval = __sync_fetch_and_add(&Nexttid, 1);
+	} while (retval == 0);
+
+	return retval;
 }
 
 /*
@@ -75,17 +126,9 @@ pmemobj_pool_open(const char *path)
 {
 	LOG(3, "path \"%s\"", path);
 
-	int fd;
-	if ((fd = open(path, O_RDWR))< 0) {
-		LOG(1, "!%s", path);
-		return NULL;
-	}
-
 	struct stat stbuf;
-
-	if (fstat(fd, &stbuf) < 0) {
-		LOG(1, "!fstat");
-		close(fd);
+	if (stat(path, &stbuf) < 0) {
+		LOG(1, "!%s", path);
 		return NULL;
 	}
 
@@ -93,7 +136,12 @@ pmemobj_pool_open(const char *path)
 		LOG(1, "size %zu smaller than %zu",
 				stbuf.st_size, PMEMOBJ_MIN_POOL);
 		errno = EINVAL;
-		close(fd);
+		return NULL;
+	}
+
+	int fd;
+	if ((fd = open(path, O_RDWR))< 0) {
+		LOG(1, "!%s", path);
 		return NULL;
 	}
 
@@ -161,7 +209,9 @@ pmemobj_pool_open(const char *path)
 		/* store pool's header */
 		libpmem_persist(is_pmem, hdrp, sizeof (*hdrp));
 
-		/* XXX create rest of required metadata */
+		/* initialize pool metadata */
+		memset(&pop->rootlock, '\0', sizeof (pop->rootlock));
+		pop->rootdirect = NULL;
 	}
 
 	/* use some of the memory pool area for run-time info */
@@ -236,12 +286,109 @@ pmemobj_pool_check_mirrored(const char *path1, const char *path2)
 }
 
 /*
+ * tx_error -- (internal) set error state
+ *
+ * This is typically called for pmemobj error cases like this:
+ *	return tx_error(tid, errnum);
+ * A tid of zero is passed to mean the current tid for this thread.
+ *
+ * If there's no transaction in progress or if the transaction does
+ * not have a jmp_buf defined, tx_error sets errno and returns -1.
+ * If there's a jmp_buf defined, tx_error sets errno and longjmps.
+ */
+static int
+tx_error(int tid, int errnum)
+{
+	errno = errnum;
+	/* XXX if jmp_buf defined, longjmp */
+	return -1;
+}
+
+/*
+ * mutexof -- (internal) find or allocate a pthread_mutex_t
+ *
+ * The first time mutexof() is used on a zeroed PMEMmutex, or
+ * the first time it is used during this run of the  program,
+ * mutexof() allocates a new pthread_mutex_t in DRAM and initializes
+ * it for use.  On subsequent calls, mutexof() returns the existing
+ * pthread_mutex_t.
+ *
+ * NULL is returned if the pthread_mutex_t cannot be allocated or initialized.
+ */
+pthread_mutex_t *
+mutexof(PMEMmutex *mutexp)
+{
+	if (mutexp->runid == Runid)
+		return mutexp->pthread_mutexp;	/* already allocated */
+	else if ((mutexp->pthread_mutexp =
+				Malloc(sizeof (pthread_mutex_t))) == NULL)
+		return NULL;
+	else if ((errno = pthread_mutex_init(mutexp->pthread_mutexp, NULL)))
+		return NULL;
+	else
+		return mutexp->pthread_mutexp;	/* newly allocated */
+}
+
+/*
+ * rwlockof -- (internal) find or allocate a pthread_rwlock_t
+ *
+ * NULL is returned if the pthread_rwlock_t cannot be allocated or initialized.
+ */
+pthread_rwlock_t *
+rwlockof(PMEMrwlock *rwlockp)
+{
+	if (rwlockp->runid == Runid)
+		return rwlockp->pthread_rwlockp;	/* already allocated */
+	else if ((rwlockp->pthread_rwlockp =
+				Malloc(sizeof (pthread_rwlock_t))) == NULL)
+		return NULL;
+	else if ((errno = pthread_rwlock_init(rwlockp->pthread_rwlockp, NULL)))
+		return NULL;
+	else
+		return rwlockp->pthread_rwlockp;	/* newly allocated */
+}
+
+/*
+ * condof -- (internal) find or allocate a pthread_cond_t
+ *
+ * NULL is returned if the pthread_cond_t cannot be allocated or initialized.
+ */
+pthread_cond_t *
+condof(PMEMcond *condp)
+{
+	if (condp->runid == Runid)
+		return condp->pthread_condp;	/* already allocated */
+	else if ((condp->pthread_condp =
+				Malloc(sizeof (pthread_cond_t))) == NULL)
+		return NULL;
+	else if ((errno = pthread_cond_init(condp->pthread_condp, NULL)))
+		return NULL;
+	else
+		return condp->pthread_condp;	/* newly allocated */
+}
+
+/*
  * pmemobj_mutex_init -- initialize a PMEMmutex
+ *
+ * Calling pmemobj_mutex_init() is only necessary on new allocations,
+ * and even then only if the PMEMmutex has not been zeroed.  Unlike
+ * pthread_mutex_t, PMEMmutexes are considered initialized when they
+ * are zeroed (so PMEMmutexes allocated via pmemobj_zalloc() need not be
+ * initialized, for example).  In addition, they are automatically
+ * re-initialized each time the memory pool is opened (any state stored
+ * in pmem for a PMEMmutex resets).
+ *
+ * Unlike pthread_mutex_init(), no attr argument is supported.
  */
 int
 pmemobj_mutex_init(PMEMmutex *mutexp)
 {
-	return 0;
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	if (pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_mutex_init(pthread_mutexp, NULL);
 }
 
 /*
@@ -250,7 +397,26 @@ pmemobj_mutex_init(PMEMmutex *mutexp)
 int
 pmemobj_mutex_lock(PMEMmutex *mutexp)
 {
-	return 0;
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	if (pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_mutex_lock(pthread_mutexp);
+}
+
+/*
+ * pmemobj_mutex_trylock -- try to lock a PMEMmutex
+ */
+int
+pmemobj_mutex_trylock(PMEMmutex *mutexp)
+{
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	if (pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_mutex_trylock(pthread_mutexp);
 }
 
 /*
@@ -259,7 +425,13 @@ pmemobj_mutex_lock(PMEMmutex *mutexp)
 int
 pmemobj_mutex_unlock(PMEMmutex *mutexp)
 {
-	return 0;
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	/* for unlock, this shouldn't happen.  XXX maybe assert that? */
+	if (pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_mutex_unlock(pthread_mutexp);
 }
 
 /*
@@ -268,7 +440,12 @@ pmemobj_mutex_unlock(PMEMmutex *mutexp)
 int
 pmemobj_rwlock_init(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_init(pthread_rwlockp, NULL);
 }
 
 /*
@@ -277,7 +454,12 @@ pmemobj_rwlock_init(PMEMrwlock *rwlockp)
 int
 pmemobj_rwlock_rdlock(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_rdlock(pthread_rwlockp);
 }
 
 /*
@@ -286,7 +468,12 @@ pmemobj_rwlock_rdlock(PMEMrwlock *rwlockp)
 int
 pmemobj_rwlock_wrlock(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_wrlock(pthread_rwlockp);
 }
 
 /*
@@ -296,7 +483,12 @@ int
 pmemobj_rwlock_timedrdlock(PMEMrwlock *restrict rwlockp,
 		const struct timespec *restrict abs_timeout)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_timedrdlock(pthread_rwlockp, abs_timeout);
 }
 
 /*
@@ -306,7 +498,12 @@ int
 pmemobj_rwlock_timedwrlock(PMEMrwlock *restrict rwlockp,
 		const struct timespec *restrict abs_timeout)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_timedwrlock(pthread_rwlockp, abs_timeout);
 }
 
 /*
@@ -315,7 +512,12 @@ pmemobj_rwlock_timedwrlock(PMEMrwlock *restrict rwlockp,
 int
 pmemobj_rwlock_tryrdlock(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_tryrdlock(pthread_rwlockp);
 }
 
 /*
@@ -324,7 +526,12 @@ pmemobj_rwlock_tryrdlock(PMEMrwlock *rwlockp)
 int
 pmemobj_rwlock_trywrlock(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_trywrlock(pthread_rwlockp);
 }
 
 /*
@@ -333,7 +540,12 @@ pmemobj_rwlock_trywrlock(PMEMrwlock *rwlockp)
 int
 pmemobj_rwlock_unlock(PMEMrwlock *rwlockp)
 {
-	return 0;
+	pthread_rwlock_t *pthread_rwlockp = rwlockof(rwlockp);
+
+	if (pthread_rwlockp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_rwlock_unlock(pthread_rwlockp);
 }
 
 /*
@@ -342,7 +554,12 @@ pmemobj_rwlock_unlock(PMEMrwlock *rwlockp)
 int
 pmemobj_cond_init(PMEMcond *condp)
 {
-	return 0;
+	pthread_cond_t *pthread_condp = condof(condp);
+
+	if (pthread_condp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_cond_init(pthread_condp, NULL);
 }
 
 /*
@@ -351,7 +568,12 @@ pmemobj_cond_init(PMEMcond *condp)
 int
 pmemobj_cond_broadcast(PMEMcond *condp)
 {
-	return 0;
+	pthread_cond_t *pthread_condp = condof(condp);
+
+	if (pthread_condp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_cond_broadcast(pthread_condp);
 }
 
 /*
@@ -360,7 +582,12 @@ pmemobj_cond_broadcast(PMEMcond *condp)
 int
 pmemobj_cond_signal(PMEMcond *condp)
 {
-	return 0;
+	pthread_cond_t *pthread_condp = condof(condp);
+
+	if (pthread_condp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_cond_signal(pthread_condp);
 }
 
 /*
@@ -371,7 +598,13 @@ pmemobj_cond_timedwait(PMEMcond *restrict condp,
 		PMEMmutex *restrict mutexp,
 		const struct timespec *restrict abstime)
 {
-	return 0;
+	pthread_cond_t *pthread_condp = condof(condp);
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	if (pthread_condp == NULL || pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_cond_timedwait(pthread_condp, pthread_mutexp, abstime);
 }
 
 /*
@@ -380,18 +613,25 @@ pmemobj_cond_timedwait(PMEMcond *restrict condp,
 int
 pmemobj_cond_wait(PMEMcond *condp, PMEMmutex *restrict mutexp)
 {
-	return 0;
+	pthread_cond_t *pthread_condp = condof(condp);
+	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
+
+	if (pthread_condp == NULL || pthread_mutexp == NULL)
+		return tx_error(0, ENOMEM);
+
+	return pthread_cond_wait(pthread_condp, pthread_mutexp);
 }
 
 /*
- * pmemobj_root -- return root object ID
+ * zalloc -- (internal) fake version zeroed malloc
  */
-PMEMoid
-pmemobj_root(PMEMobjpool *pop, size_t size)
+static void *
+zalloc(size_t size)
 {
-	PMEMoid r = { 0 };
-
-	return r;
+	char *ptr = Malloc(size);
+	if (ptr)
+		memset(ptr, '\0', size);
+	return (void *)ptr;
 }
 
 /*
@@ -413,7 +653,11 @@ pmemobj_root(PMEMobjpool *pop, size_t size)
 void *
 pmemobj_root_direct(PMEMobjpool *pop, size_t size)
 {
-	return pmemobj_direct(pmemobj_root(pop, size));
+	pmemobj_mutex_lock(&pop->rootlock);
+	if (pop->rootdirect == NULL)
+		pop->rootdirect = zalloc(size);
+	pmemobj_mutex_unlock(&pop->rootlock);
+	return pop->rootdirect;
 }
 
 /*
@@ -426,7 +670,9 @@ pmemobj_root_direct(PMEMobjpool *pop, size_t size)
 int
 pmemobj_root_resize(PMEMobjpool *pop, size_t newsize)
 {
-	return 0;
+	/* XXX stub */
+	errno = ENOMEM;
+	return -1;
 }
 
 /*
@@ -435,7 +681,21 @@ pmemobj_root_resize(PMEMobjpool *pop, size_t newsize)
 int
 pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env)
 {
-	return 0;
+	int tid = newtid();
+	struct tx *ntx = zalloc(sizeof (*ntx));
+
+	ntx->tid = tid;
+	if (env) {
+		ntx->valid_env = 1;
+		memcpy((void *)&ntx->env, (void *)&env, sizeof (env));
+	} else
+		ntx->valid_env = 0;
+	ntx->txops = NULL;
+
+	ntx->next = Curtx;
+	Curtx = ntx;
+
+	return tid;
 }
 
 /*
@@ -579,6 +839,19 @@ pmemobj_free(PMEMoid oid)
 }
 
 /*
+ * pmemobj_size -- return the current size of an object
+ *
+ * No lock or transaction is required for this call, but of course
+ * if the object is not protected by some sort of locking, another
+ * thread may change the size before the caller uses the return value.
+ */
+size_t
+pmemobj_size(PMEMoid oid)
+{
+	return 0;
+}
+
+/*
  * pmemobj_alloc_tid -- transactional allocate
  */
 PMEMoid
@@ -671,7 +944,7 @@ pmemobj_direct_ntx(PMEMoid oid)
 int
 pmemobj_nulloid(PMEMoid oid)
 {
-	return 0;
+	return (oid.off == 0);
 }
 
 /*

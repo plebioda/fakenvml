@@ -101,25 +101,23 @@ typedef struct pmemoid {
  * the program is run.
  */
 typedef struct pmemmutex {
-	uint64_t *idp;		/* points at our "run ID" */
-	uint64_t id;		/* matches *idp if mutexp is initialized */
-	pthread_mutex_t *mutexp;
+	uint64_t runid;		/* matches if pthread_mutexp is initialized */
+	pthread_mutex_t *pthread_mutexp;
 } PMEMmutex;
 
 typedef struct pmemrwlock {
-	uint64_t *idp;		/* points at our "run ID" */
-	uint64_t id;		/* matches *idp if rwlockp is initialized */
-	pthread_mutex_t *rwlockp;
+	uint64_t runid;		/* matches if pthread_rwlockp is initialized */
+	pthread_rwlock_t *pthread_rwlockp;
 } PMEMrwlock;
 
 typedef struct pmemcond {
-	uint64_t *idp;		/* points at our "run ID" */
-	uint64_t id;		/* matches *idp if condp is initialized */
-	pthread_cond_t *condp;
+	uint64_t runid;		/* matches if pthread_condp is initialized */
+	pthread_cond_t *pthread_condp;
 } PMEMcond;
 
 int pmemobj_mutex_init(PMEMmutex *mutexp);
 int pmemobj_mutex_lock(PMEMmutex *mutexp);
+int pmemobj_mutex_trylock(PMEMmutex *mutexp);
 int pmemobj_mutex_unlock(PMEMmutex *mutexp);
 
 int pmemobj_rwlock_init(PMEMrwlock *rwlockp);
@@ -142,7 +140,6 @@ int pmemobj_cond_timedwait(PMEMcond *restrict condp,
 int pmemobj_cond_wait(PMEMcond *condp,
 		PMEMmutex *restrict mutexp);
 
-PMEMoid pmemobj_root(PMEMobjpool *pop, size_t size);
 void *pmemobj_root_direct(PMEMobjpool *pop, size_t size);
 int pmemobj_root_resize(PMEMobjpool *pop, size_t size);
 
@@ -162,6 +159,8 @@ PMEMoid pmemobj_realloc(PMEMoid oid, size_t size);
 PMEMoid pmemobj_aligned_alloc(size_t alignment, size_t size);
 PMEMoid pmemobj_strdup(const char *s);
 int pmemobj_free(PMEMoid oid);
+
+size_t pmemobj_size(PMEMoid oid);	/* no lock/tx required */
 
 PMEMoid pmemobj_alloc_tid(int tid, size_t size);
 PMEMoid pmemobj_zalloc_tid(int tid, size_t size);

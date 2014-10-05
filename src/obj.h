@@ -51,9 +51,8 @@ struct pmemobjpool {
 	size_t size;		/* size of mapped region */
 
 	/* for the fake implementation... */
-	pthread_mutex_t rootlock;
-	void *rootp;
-	size_t rootsize;
+	PMEMmutex rootlock;
+	void *rootdirect;
 };
 
 /* alignment of every object */

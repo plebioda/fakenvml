@@ -85,6 +85,7 @@ libpmem.so {
 		pmemobj_aligned_alloc_tid;
 		pmemobj_strdup_tid;
 		pmemobj_free_tid;
+		pmemobj_size;
 		pmemobj_direct;
 		pmemobj_direct_ntx;
 		pmemobj_nulloid;
