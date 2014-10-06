@@ -61,7 +61,7 @@ struct tx {
 	int valid_env;
 	jmp_buf env;
 	PMEMmutex *mutexp;
-	PMEMmutex *rwlockp;
+	PMEMrwlock *rwlockp;
 	/* one of these is pushed for each operation in a transaction */
 	struct txop {
 		struct txop *head;
@@ -673,7 +673,7 @@ pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env)
 
 	if (env) {
 		txp->valid_env = 1;
-		memcpy((void *)&txp->env, (void *)&env, sizeof (env));
+		memcpy((void *)txp->env, (void *)env, sizeof (jmp_buf));
 	}
 
 	txinfop->txp = txp;
@@ -702,7 +702,7 @@ PMEMtid
 pmemobj_tx_begin_wrlock(PMEMobjpool *pop, jmp_buf env, PMEMrwlock *rwlockp)
 {
 	struct tx *txp = (struct tx *)pmemobj_tx_begin(pop, env);
-	pmemobj_rwlock_lock(rwlockp);
+	pmemobj_rwlock_wrlock(rwlockp);
 	txp->rwlockp = rwlockp;
 	return (PMEMtid)txp;
 }
