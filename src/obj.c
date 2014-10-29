@@ -57,27 +57,45 @@
 
 static uint64_t Runid;		/* unique "run ID" for this program run */
 
+typedef enum {
+	TXOP_ALLOC,	/* arg1 is the addr */
+	TXOP_FREE,	/* arg1 is the addr */
+	TXOP_SET,	/* arg1 is the addr, arg2 is the len, arg3 is the old content */	
+} op_t;
+
 struct tx {
 	int valid_env;
 	jmp_buf env;
 	PMEMmutex *mutexp;
 	PMEMrwlock *rwlockp;
+	
+	struct tx *next;	/* outer transaction when nested */
 	/* one of these is pushed for each operation in a transaction */
+	struct txop *head;
+	struct txop *tail;
 	struct txop {
-		struct txop *head;
-		struct txop *tail;
-		enum {
-			TXOP_ALLOC,	/* arg1 is the objheader */
-			TXOP_FREE,	/* arg1 is the objheader */
-			TXOP_SET,	/* arg1 is the addr, arg1 is the len */
-		} op;
-		void *arg1;
-		void *arg2;
+		op_t op;
+		void *next;
+		void *prev;
+		union txop_args {
+			struct {
+				void *addr;
+			} alloc;
+			struct {
+				void *addr;
+			} free;
+			struct {
+				void *addr;
+				void *data;
+				size_t len;
+			} set;
+		} args;
 	} *txops;
 };
 
+typedef void (*pmemobj_txop_onaction_t)(union txop_args args);
+
 static __thread struct txinfo {
-	struct txinfo *next;	/* outer transaction when nested */
 	struct tx *txp;
 } *Curthread_txinfop;		/* current transaction for this thread */
 
@@ -214,7 +232,7 @@ pmemobj_pool_open(const char *path)
 	util_range_none(addr, sizeof (struct pool_hdr));
 
 	/* the rest should be kept read-only for debug version */
-	RANGE_RO(addr + sizeof (struct pool_hdr),
+	RANGE_RW(addr + sizeof (struct pool_hdr),
 			stbuf.st_size - sizeof (struct pool_hdr));
 
 	LOG(3, "pop %p", pop);
@@ -390,6 +408,7 @@ pmemobj_mutex_lock(PMEMmutex *mutexp)
 		return tx_error(0, ENOMEM);
 
 	return pthread_mutex_lock(pthread_mutexp);
+	return 0;
 }
 
 /*
@@ -414,11 +433,11 @@ pmemobj_mutex_unlock(PMEMmutex *mutexp)
 {
 	pthread_mutex_t *pthread_mutexp = mutexof(mutexp);
 
-	/* for unlock, this shouldn't happen.  XXX maybe assert that? */
 	if (pthread_mutexp == NULL)
 		return tx_error(0, ENOMEM);
 
 	return pthread_mutex_unlock(pthread_mutexp);
+	return 0;
 }
 
 /*
@@ -669,16 +688,22 @@ PMEMtid
 pmemobj_tx_begin(PMEMobjpool *pop, jmp_buf env)
 {
 	struct tx *txp = zalloc(sizeof (*txp));
-	struct txinfo *txinfop = zalloc(sizeof (*txinfop));
 
 	if (env) {
 		txp->valid_env = 1;
 		memcpy((void *)txp->env, (void *)env, sizeof (jmp_buf));
 	}
 
-	txinfop->txp = txp;
-	txinfop->next = Curthread_txinfop;
-	Curthread_txinfop = txinfop;
+	if (Curthread_txinfop == NULL) {
+		struct txinfo *txinfop = zalloc(sizeof (*txinfop));
+		txinfop->txp = txp;
+		Curthread_txinfop = txinfop;
+		txp->next = NULL;
+	} else {
+		txp->next = Curthread_txinfop->txp;
+		Curthread_txinfop->txp = txp;
+	}
+
 
 	return (PMEMtid)txp;
 }
@@ -713,7 +738,52 @@ pmemobj_tx_begin_wrlock(PMEMobjpool *pop, jmp_buf env, PMEMrwlock *rwlockp)
 int
 pmemobj_tx_commit(void)
 {
-	return 0;
+	return pmemobj_tx_commit_tid((PMEMtid)Curthread_txinfop->txp);
+}
+
+void
+pmemobj_txop_oncommit_alloc(union txop_args args)
+{
+}
+
+void
+pmemobj_txop_oncommit_free(union txop_args args)
+{
+	free(args.free.addr);
+}
+
+void
+pmemobj_txop_oncommit_set(union txop_args args)
+{
+	free(args.set.data);
+}
+
+pmemobj_txop_onaction_t oncommit_funcs[] = {
+	pmemobj_txop_oncommit_alloc,
+	pmemobj_txop_oncommit_free,
+	pmemobj_txop_oncommit_set
+};
+
+int
+pmemobj_tx_action_tid(PMEMtid tid, pmemobj_txop_onaction_t *actions)
+{
+	struct tx *tx = (struct tx *)tid;
+	if (tx->next == NULL) {
+		struct txop *op = tx->tail;
+		for(; op != NULL; op = op->prev) {
+			actions[op->op](op->args);
+		}
+		free(tx);
+		free(Curthread_txinfop);
+		Curthread_txinfop = NULL;
+	} else {
+		tx->tail->prev = tx->next->tail;
+		tx->next->tail = tx->tail;
+		Curthread_txinfop->txp = tx->next;
+		free(tx);
+	}
+
+	return 0;	
 }
 
 /*
@@ -722,7 +792,7 @@ pmemobj_tx_commit(void)
 int
 pmemobj_tx_commit_tid(PMEMtid tid)
 {
-	return 0;
+	return pmemobj_tx_action_tid(tid, oncommit_funcs);
 }
 
 /*
@@ -747,13 +817,42 @@ pmemobj_tx_commit_multiv(PMEMtid tids[])
 	return 0;
 }
 
+void
+pmemobj_txop_alloc_onabort(union txop_args args)
+{
+	free(args.alloc.addr);
+}
+
+void
+pmemobj_txop_free_onabort(union txop_args args)
+{
+}
+
+void
+pmemobj_txop_set_onabort(union txop_args args)
+{
+	memcpy(args.set.addr, args.set.data, args.set.len);
+}
+
+pmemobj_txop_onaction_t onabort_funcs[] = {
+	pmemobj_txop_alloc_onabort,
+	pmemobj_txop_free_onabort,
+	pmemobj_txop_set_onabort
+};
+
 /*
  * pmemobj_tx_abort -- abort transaction, implicit tid
  */
 int
 pmemobj_tx_abort(int errnum)
 {
-	return 0;
+	int status = -1;
+	while (Curthread_txinfop != NULL) {
+		status = pmemobj_tx_abort_tid(
+			(PMEMtid)Curthread_txinfop->txp, errnum);
+	}
+
+	return status;
 }
 
 /*
@@ -762,7 +861,76 @@ pmemobj_tx_abort(int errnum)
 int
 pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 {
-	return 0;
+	return pmemobj_tx_action_tid(tid, onabort_funcs);
+}
+
+static struct txop *
+pmemobj_log_prepare_alloc(void *addr)
+{
+	struct txop *txop = zalloc(sizeof(struct txop));
+	txop->args.alloc.addr = addr;
+	txop->op = TXOP_ALLOC;
+	return txop;
+}
+
+static struct txop *
+pmemobj_log_prepare_free(void *addr)
+{
+	struct txop *txop = zalloc(sizeof(struct txop));
+	txop->args.free.addr = addr;
+	txop->op = TXOP_FREE;
+	return txop;
+}
+
+static struct txop *
+pmemobj_log_prepare_set(void *addr, void *data, size_t len)
+{
+	struct txop *txop = zalloc(sizeof(struct txop));
+	txop->args.set.addr = addr;
+	txop->args.set.data = data;
+	txop->args.set.len = len;
+	txop->op = TXOP_SET;
+	return txop;	
+}
+
+static void
+pmemobj_log_add(PMEMtid tid, struct txop * txop)
+{
+	struct tx *tx = (struct tx *)tid;
+	if (tx->head == NULL) {
+		tx->head = txop;
+	} else {
+		tx->tail->next = txop;
+		txop->prev = tx->tail;
+	}
+	tx->tail = txop;
+}
+
+static void
+pmemobj_log_add_alloc(PMEMtid tid, void *addr)
+{
+	struct txop *txop = pmemobj_log_prepare_alloc(addr);
+	if (txop) {
+		pmemobj_log_add(tid, txop);
+	}
+}
+
+static void
+pmemobj_log_add_free(PMEMtid tid, void *addr)
+{
+	struct txop *txop = pmemobj_log_prepare_free(addr);
+	if (txop) {
+		pmemobj_log_add(tid, txop);
+	}
+}
+
+static void
+pmemobj_log_add_set(PMEMtid tid, void *addr, void *data, size_t len)
+{
+	struct txop *txop = pmemobj_log_prepare_set(addr, data, len);
+	if (txop) {
+		pmemobj_log_add(tid, txop);
+	}
 }
 
 /*
@@ -771,9 +939,7 @@ pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 PMEMoid
 pmemobj_alloc(size_t size)
 {
-	PMEMoid n = { 0 };
-
-	return n;
+	return pmemobj_alloc_tid((PMEMtid)Curthread_txinfop->txp, size);
 }
 
 /*
@@ -782,9 +948,7 @@ pmemobj_alloc(size_t size)
 PMEMoid
 pmemobj_zalloc(size_t size)
 {
-	PMEMoid n = { 0 };
-
-	return n;
+	return pmemobj_zalloc_tid((PMEMtid)Curthread_txinfop->txp, size);
 }
 
 /*
@@ -793,9 +957,7 @@ pmemobj_zalloc(size_t size)
 PMEMoid
 pmemobj_realloc(PMEMoid oid, size_t size)
 {
-	PMEMoid n = { 0 };
-
-	return n;
+	return pmemobj_realloc_tid((PMEMtid)Curthread_txinfop->txp, oid, size);
 }
 
 /*
@@ -804,9 +966,7 @@ pmemobj_realloc(PMEMoid oid, size_t size)
 PMEMoid
 pmemobj_aligned_alloc(size_t alignment, size_t size)
 {
-	PMEMoid n = { 0 };
-
-	return n;
+	return pmemobj_aligned_alloc_tid((PMEMtid)Curthread_txinfop->txp, alignment, size);
 }
 
 /*
@@ -815,9 +975,7 @@ pmemobj_aligned_alloc(size_t alignment, size_t size)
 PMEMoid
 pmemobj_strdup(const char *s)
 {
-	PMEMoid n = { 0 };
-
-	return n;
+	return pmemobj_strdup_tid((PMEMtid)Curthread_txinfop->txp, s);
 }
 
 /*
@@ -826,7 +984,7 @@ pmemobj_strdup(const char *s)
 int
 pmemobj_free(PMEMoid oid)
 {
-	return 0;
+	return pmemobj_free_tid((PMEMtid)Curthread_txinfop->txp, oid);
 }
 
 /*
@@ -849,7 +1007,8 @@ PMEMoid
 pmemobj_alloc_tid(PMEMtid tid, size_t size)
 {
 	PMEMoid n = { 0 };
-
+	n.off = (uintptr_t)malloc(size);
+	pmemobj_log_add_alloc(tid, (void*)n.off);
 	return n;
 }
 
@@ -860,7 +1019,9 @@ PMEMoid
 pmemobj_zalloc_tid(PMEMtid tid, size_t size)
 {
 	PMEMoid n = { 0 };
-
+	n.off = (uintptr_t)malloc(size);
+	memset((void *)n.off, 0, size);
+	pmemobj_log_add_alloc(tid, (void*)n.off);
 	return n;
 }
 
@@ -871,6 +1032,7 @@ PMEMoid
 pmemobj_realloc_tid(PMEMtid tid, PMEMoid oid, size_t size)
 {
 	PMEMoid n = { 0 };
+	
 
 	return n;
 }
@@ -903,6 +1065,7 @@ pmemobj_strdup_tid(PMEMtid tid, const char *s)
 int
 pmemobj_free_tid(PMEMtid tid, PMEMoid oid)
 {
+	pmemobj_log_add_free(tid, (void*)oid.off);	
 	return 0;
 }
 
@@ -917,7 +1080,7 @@ pmemobj_free_tid(PMEMtid tid, PMEMoid oid)
 void *
 pmemobj_direct(PMEMoid oid)
 {
-	return NULL;
+	return (void *)oid.off;
 }
 
 /*
@@ -926,7 +1089,7 @@ pmemobj_direct(PMEMoid oid)
 void *
 pmemobj_direct_ntx(PMEMoid oid)
 {
-	return NULL;
+	return (void *)oid.off;
 }
 
 /*
@@ -944,7 +1107,7 @@ pmemobj_nulloid(PMEMoid oid)
 int
 pmemobj_memcpy(void *dstp, void *srcp, size_t size)
 {
-	return 0;
+	return pmemobj_memcpy_tid((PMEMtid)Curthread_txinfop->txp, dstp, srcp, size);
 }
 
 /*
@@ -953,5 +1116,13 @@ pmemobj_memcpy(void *dstp, void *srcp, size_t size)
 int
 pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 {
+	void *old = malloc(size);
+	memcpy(old, dstp, size);
+	memcpy(dstp, srcp, size);
+	pmemobj_log_add_set(tid, dstp, old, size);	
 	return 0;
+}
+
+void pmem_assign_void(void *lval, void *rval) {
+	PMEMOBJ_SET(lval, rval);
 }

@@ -31,26 +31,13 @@
 #
 
 #
-# src/test/Makefile -- build all unit tests
+# src/test/obj_basic/Makefile -- build obj_basic unit test
 #
-# Makefile -- build all unit tests
-#
-TEST = obj_list_basic\
-       obj_list_strdup\
-       obj_basic
+TARGET = obj_basic
+OBJS = obj_basic.o
 
-all     : TARGET = all
-clean   : TARGET = clean
-clobber : TARGET = clobber
-test    : TARGET = test
-cstyle  : TARGET = cstyle
+include ../Makefile.inc
 
-all clean clobber test cstyle: $(TEST)
+LIBS += -lpmem
 
-$(TEST): unittest
-	$(MAKE) -C $@ $(TARGET)
-
-unittest:
-	$(MAKE) -C $@ $(TARGET)
-
-.PHONY: all clean clobber test cstyle unittest $(TEST)
+obj_basic.o: obj_basic.c
