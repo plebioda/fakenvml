@@ -1,0 +1,8 @@
+Linux NVM Library
+
+This is src/test/obj_basic/README.
+
+This directory contains basic tests of pmemobj.
+
+Run:
+	obj_basic file
