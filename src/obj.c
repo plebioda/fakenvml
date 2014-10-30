@@ -58,9 +58,9 @@
 static uint64_t Runid;		/* unique "run ID" for this program run */
 
 typedef enum {
-	TXOP_ALLOC,	/* arg1 is the addr */
-	TXOP_FREE,	/* arg1 is the addr */
-	TXOP_SET,	/* arg1 is the addr, arg2 is the len, arg3 is the old content */	
+	TXOP_ALLOC,
+	TXOP_FREE,
+	TXOP_SET,
 } op_t;
 
 struct tx {
@@ -68,7 +68,7 @@ struct tx {
 	jmp_buf env;
 	PMEMmutex *mutexp;
 	PMEMrwlock *rwlockp;
-	
+
 	struct tx *next;	/* outer transaction when nested */
 	/* one of these is pushed for each operation in a transaction */
 	struct txop *head;
@@ -408,7 +408,6 @@ pmemobj_mutex_lock(PMEMmutex *mutexp)
 		return tx_error(0, ENOMEM);
 
 	return pthread_mutex_lock(pthread_mutexp);
-	return 0;
 }
 
 /*
@@ -437,7 +436,6 @@ pmemobj_mutex_unlock(PMEMmutex *mutexp)
 		return tx_error(0, ENOMEM);
 
 	return pthread_mutex_unlock(pthread_mutexp);
-	return 0;
 }
 
 /*
@@ -783,7 +781,7 @@ pmemobj_tx_action_tid(PMEMtid tid, pmemobj_txop_onaction_t *actions)
 		free(tx);
 	}
 
-	return 0;	
+	return 0;
 }
 
 /*
@@ -890,7 +888,7 @@ pmemobj_log_prepare_set(void *addr, void *data, size_t len)
 	txop->args.set.data = data;
 	txop->args.set.len = len;
 	txop->op = TXOP_SET;
-	return txop;	
+	return txop;
 }
 
 static void
@@ -1032,7 +1030,6 @@ PMEMoid
 pmemobj_realloc_tid(PMEMtid tid, PMEMoid oid, size_t size)
 {
 	PMEMoid n = { 0 };
-	
 
 	return n;
 }
@@ -1044,6 +1041,8 @@ PMEMoid
 pmemobj_aligned_alloc_tid(PMEMtid tid, size_t alignment, size_t size)
 {
 	PMEMoid n = { 0 };
+	n.off = (uintptr_t)aligned_alloc(alignment, size);
+	pmemobj_log_add_alloc(tid, (void*)n.off);
 
 	return n;
 }
@@ -1065,7 +1064,7 @@ pmemobj_strdup_tid(PMEMtid tid, const char *s)
 int
 pmemobj_free_tid(PMEMtid tid, PMEMoid oid)
 {
-	pmemobj_log_add_free(tid, (void*)oid.off);	
+	pmemobj_log_add_free(tid, (void*)oid.off);
 	return 0;
 }
 
@@ -1119,7 +1118,7 @@ pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 	void *old = malloc(size);
 	memcpy(old, dstp, size);
 	memcpy(dstp, srcp, size);
-	pmemobj_log_add_set(tid, dstp, old, size);	
+	pmemobj_log_add_set(tid, dstp, old, size);
 	return 0;
 }
 
