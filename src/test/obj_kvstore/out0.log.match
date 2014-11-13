@@ -1,0 +1,13 @@
+obj_kvstore/TEST0: START: obj_kvstore
+ ./obj_kvstore$(*) $(*)/testfile1 5 4 3 2 1
+rehashing from 2 to 4
+rehashing from 4 to 8
+hash[key1]: value1 -> VALUE1
+rehashing from 8 to 16
+hash[key3] = value3
+hash[key2] = (null)
+hash[key1] = VALUE1
+hash[key9] = value9
+hash[key8] = value8
+hash[key0] = (null)
+obj_kvstore/TEST0: Done
