@@ -1,0 +1,11 @@
+obj_pmemlog/TEST0: START: obj_pmem_log
+ ./obj_pmemlog$(*) $(*)/testfile1
+tell: 48
+nbytes: 2088960
+String1
+String2
+String3
+String4
+String5
+String6
+obj_pmemlog/TEST0: Done
