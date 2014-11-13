@@ -1,0 +1,14 @@
+obj_list_basic/TEST0: START: obj_list_basic
+ ./obj_list_basic$(*) $(*)/testfile1 5 4 3 2 1
+value 5 inserted
+value 4 inserted
+value 3 inserted
+value 2 inserted
+value 1 inserted
+list contains:
+    value 1
+    value 2
+    value 3
+    value 4
+    value 5
+obj_list_basic/TEST0: Done

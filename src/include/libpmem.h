@@ -181,8 +181,8 @@ void *pmemobj_direct_ntx(PMEMoid oid);
 
 int pmemobj_nulloid(PMEMoid oid);
 
-int pmemobj_memcpy(void *dstp, void *srcp, size_t size);
-int pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size);
+int pmemobj_memcpy(void *dstp, const void *srcp, size_t size);
+int pmemobj_memcpy_tid(PMEMtid tid, void *dstp, const void *srcp, size_t size);
 
 #define	PMEMOBJ_SET(lhs, rhs)\
 	pmemobj_memcpy((void *)&(lhs), (void *)&(rhs), sizeof (lhs))

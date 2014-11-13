@@ -1104,7 +1104,7 @@ pmemobj_nulloid(PMEMoid oid)
  * pmemobj_memcpy -- change a range, making undo log entries, implicit tid
  */
 int
-pmemobj_memcpy(void *dstp, void *srcp, size_t size)
+pmemobj_memcpy(void *dstp, const void *srcp, size_t size)
 {
 	return pmemobj_memcpy_tid((PMEMtid)Curthread_txinfop->txp, dstp, srcp, size);
 }
@@ -1113,7 +1113,7 @@ pmemobj_memcpy(void *dstp, void *srcp, size_t size)
  * pmemobj_memcpy_tid -- change a range, making undo log entries
  */
 int
-pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
+pmemobj_memcpy_tid(PMEMtid tid, void *dstp, const void *srcp, size_t size)
 {
 	void *old = malloc(size);
 	memcpy(old, dstp, size);
