@@ -1041,8 +1041,6 @@ PMEMoid
 pmemobj_aligned_alloc_tid(PMEMtid tid, size_t alignment, size_t size)
 {
 	PMEMoid n = { 0 };
-	n.off = (uintptr_t)aligned_alloc(alignment, size);
-	pmemobj_log_add_alloc(tid, (void*)n.off);
 
 	return n;
 }
