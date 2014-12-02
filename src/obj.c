@@ -1090,7 +1090,7 @@ pmemobj_direct_ntx(PMEMoid oid)
 }
 
 /*
- * pmemobj_nulloid -- true is object ID is the NULL object
+ * pmemobj_nulloid -- true if object ID is the NULL object
  */
 int
 pmemobj_nulloid(PMEMoid oid)
