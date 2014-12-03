@@ -25,11 +25,11 @@ do_test_alloc_single_transaction(PMEMobjpool *pop)
 	}
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
-	
+
 	bp->test = pmemobj_alloc(sizeof(int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = TEST_VALUE_A;
-	
+
 	pmemobj_tx_commit();
 
 	ptr_test = pmemobj_direct(bp->test);
@@ -91,7 +91,7 @@ void do_test_combine_two_transactions(PMEMobjpool *pop) {
 	PMEMOBJ_SET(bp->test, value);
 
 	int *ptr_test = pmemobj_direct(bp->test);
-	assert(*ptr_test == TEST_VALUE_A);	
+	assert(*ptr_test == TEST_VALUE_A);
 
 	value = pmemobj_alloc(sizeof(int));
 	ptr_value = pmemobj_direct(value);
@@ -105,7 +105,7 @@ void do_test_combine_two_transactions(PMEMobjpool *pop) {
 	pmemobj_tx_commit();
 
 	ptr_test = pmemobj_direct(bp->test);
-	assert(*ptr_test == TEST_VALUE_B);	
+	assert(*ptr_test == TEST_VALUE_B);
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
@@ -124,7 +124,7 @@ void do_test_inner_transactions(PMEMobjpool *pop) {
 		return;
 	}
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
- 
+
 	PMEMoid value = pmemobj_alloc(sizeof(int));
 	int *ptr_value = pmemobj_direct(value);
 	*ptr_value = 0;
@@ -241,16 +241,16 @@ void do_test_abort_inner_transactions(PMEMobjpool *pop) {
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 	int a = TEST_VALUE_A;
-	pmemobj_memcpy(ptr_test, &a, sizeof(int));	
-	
+	pmemobj_memcpy(ptr_test, &a, sizeof(int));
+
 	pmemobj_tx_begin(pop, env);
 	{
 		int b = TEST_VALUE_B;
-		pmemobj_memcpy(ptr_test, &b, sizeof(int));	
+		pmemobj_memcpy(ptr_test, &b, sizeof(int));
 	}
 	pmemobj_tx_abort(0);
 
-	assert(*ptr_test == 0);	
+	assert(*ptr_test == 0);
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 	pmemobj_free(bp->test);
