@@ -768,7 +768,7 @@ pmemobj_tx_action_tid(PMEMtid tid, pmemobj_txop_onaction_t *actions)
 	struct tx *tx = (struct tx *)tid;
 	if (tx->next == NULL) {
 		struct txop *op = tx->tail;
-		for(; op != NULL; op = op->prev) {
+		for (; op != NULL; op = op->prev) {
 			actions[op->op](op->args);
 		}
 		free(tx);
@@ -865,7 +865,7 @@ pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 static struct txop *
 pmemobj_log_prepare_alloc(void *addr)
 {
-	struct txop *txop = zalloc(sizeof(struct txop));
+	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.alloc.addr = addr;
 	txop->op = TXOP_ALLOC;
 	return txop;
@@ -874,7 +874,7 @@ pmemobj_log_prepare_alloc(void *addr)
 static struct txop *
 pmemobj_log_prepare_free(void *addr)
 {
-	struct txop *txop = zalloc(sizeof(struct txop));
+	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.free.addr = addr;
 	txop->op = TXOP_FREE;
 	return txop;
@@ -883,7 +883,7 @@ pmemobj_log_prepare_free(void *addr)
 static struct txop *
 pmemobj_log_prepare_set(void *addr, void *data, size_t len)
 {
-	struct txop *txop = zalloc(sizeof(struct txop));
+	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.set.addr = addr;
 	txop->args.set.data = data;
 	txop->args.set.len = len;
@@ -892,7 +892,7 @@ pmemobj_log_prepare_set(void *addr, void *data, size_t len)
 }
 
 static void
-pmemobj_log_add(PMEMtid tid, struct txop * txop)
+pmemobj_log_add(PMEMtid tid, struct txop *txop)
 {
 	struct tx *tx = (struct tx *)tid;
 	if (tx->head == NULL) {
@@ -964,7 +964,8 @@ pmemobj_realloc(PMEMoid oid, size_t size)
 PMEMoid
 pmemobj_aligned_alloc(size_t alignment, size_t size)
 {
-	return pmemobj_aligned_alloc_tid((PMEMtid)Curthread_txinfop->txp, alignment, size);
+	return pmemobj_aligned_alloc_tid((PMEMtid)Curthread_txinfop->txp,
+							alignment, size);
 }
 
 /*
@@ -1104,7 +1105,8 @@ pmemobj_nulloid(PMEMoid oid)
 int
 pmemobj_memcpy(void *dstp, void *srcp, size_t size)
 {
-	return pmemobj_memcpy_tid((PMEMtid)Curthread_txinfop->txp, dstp, srcp, size);
+	return pmemobj_memcpy_tid((PMEMtid)Curthread_txinfop->txp, dstp,
+								srcp, size);
 }
 
 /*

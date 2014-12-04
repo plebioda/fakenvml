@@ -7,11 +7,11 @@ struct base {
 	PMEMmutex mutex;
 };
 
-#define TEST_VALUE_A 5
-#define TEST_VALUE_B 6
-#define TEST_INNER_LOOPS 2
+#define	TEST_VALUE_A 5
+#define	TEST_VALUE_B 6
+#define	TEST_INNER_LOOPS 2
 
-#define code_not_reached() assert(0)
+#define	code_not_reached() assert(0)
 
 void
 do_test_alloc_single_transaction(PMEMobjpool *pop)
@@ -26,7 +26,7 @@ do_test_alloc_single_transaction(PMEMobjpool *pop)
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	bp->test = pmemobj_alloc(sizeof(int));
+	bp->test = pmemobj_alloc(sizeof (int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = TEST_VALUE_A;
 
@@ -51,7 +51,7 @@ do_test_set_single_transaction(PMEMobjpool *pop)
 
 	int b = TEST_VALUE_B;
 	int *ptr_test = pmemobj_direct(bp->test);
-	pmemobj_memcpy(ptr_test, &b, sizeof(int));
+	pmemobj_memcpy(ptr_test, &b, sizeof (int));
 	pmemobj_tx_commit();
 
 	ptr_test = pmemobj_direct(bp->test);
@@ -85,7 +85,7 @@ void do_test_combine_two_transactions(PMEMobjpool *pop) {
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	PMEMoid value = pmemobj_alloc(sizeof(int));
+	PMEMoid value = pmemobj_alloc(sizeof (int));
 	int *ptr_value = pmemobj_direct(value);
 	*ptr_value = TEST_VALUE_A;
 	PMEMOBJ_SET(bp->test, value);
@@ -93,10 +93,10 @@ void do_test_combine_two_transactions(PMEMobjpool *pop) {
 	int *ptr_test = pmemobj_direct(bp->test);
 	assert(*ptr_test == TEST_VALUE_A);
 
-	value = pmemobj_alloc(sizeof(int));
+	value = pmemobj_alloc(sizeof (int));
 	ptr_value = pmemobj_direct(value);
 	int b = TEST_VALUE_B;
-	pmemobj_memcpy(ptr_value, &b, sizeof(int));
+	pmemobj_memcpy(ptr_value, &b, sizeof (int));
 
 	pmemobj_free(bp->test);
 
@@ -125,7 +125,7 @@ void do_test_inner_transactions(PMEMobjpool *pop) {
 	}
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	PMEMoid value = pmemobj_alloc(sizeof(int));
+	PMEMoid value = pmemobj_alloc(sizeof (int));
 	int *ptr_value = pmemobj_direct(value);
 	*ptr_value = 0;
 
@@ -133,7 +133,7 @@ void do_test_inner_transactions(PMEMobjpool *pop) {
 		pmemobj_tx_begin(pop, env);
 		int a = *ptr_value;
 		a += TEST_VALUE_A;
-		pmemobj_memcpy(ptr_value, &a, sizeof(int));
+		pmemobj_memcpy(ptr_value, &a, sizeof (int));
 		pmemobj_tx_commit();
 	}
 
@@ -141,7 +141,7 @@ void do_test_inner_transactions(PMEMobjpool *pop) {
 		pmemobj_tx_begin(pop, env);
 		int b = *ptr_value;
 		b -= TEST_VALUE_B;
-		pmemobj_memcpy(ptr_value, &b, sizeof(int));
+		pmemobj_memcpy(ptr_value, &b, sizeof (int));
 		pmemobj_tx_commit();
 	}
 
@@ -155,7 +155,8 @@ void do_test_inner_transactions(PMEMobjpool *pop) {
 }
 
 void
-do_test_abort_alloc_single_transaction(PMEMobjpool *pop) {
+do_test_abort_alloc_single_transaction(PMEMobjpool *pop)
+{
 	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
@@ -166,14 +167,15 @@ do_test_abort_alloc_single_transaction(PMEMobjpool *pop) {
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	bp->test = pmemobj_alloc(sizeof(int));
+	bp->test = pmemobj_alloc(sizeof (int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = TEST_VALUE_A;
 	pmemobj_tx_abort(0);
 }
 
 void
-do_test_abort_set_single_transaction(PMEMobjpool *pop) {
+do_test_abort_set_single_transaction(PMEMobjpool *pop)
+{
 	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
@@ -184,14 +186,14 @@ do_test_abort_set_single_transaction(PMEMobjpool *pop) {
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	bp->test = pmemobj_alloc(sizeof(int));
+	bp->test = pmemobj_alloc(sizeof (int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = TEST_VALUE_A;
 	pmemobj_tx_commit();
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 	int b = TEST_VALUE_B;
-	pmemobj_memcpy(ptr_test, &b, sizeof(int));
+	pmemobj_memcpy(ptr_test, &b, sizeof (int));
 	pmemobj_tx_abort(0);
 
 	assert(*ptr_test == TEST_VALUE_A);
@@ -202,7 +204,8 @@ do_test_abort_set_single_transaction(PMEMobjpool *pop) {
 }
 
 void
-do_test_abort_delete_single_transaction(PMEMobjpool *pop) {
+do_test_abort_delete_single_transaction(PMEMobjpool *pop)
+{
 	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
@@ -213,7 +216,7 @@ do_test_abort_delete_single_transaction(PMEMobjpool *pop) {
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 
-	bp->test = pmemobj_alloc(sizeof(int));
+	bp->test = pmemobj_alloc(sizeof (int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = TEST_VALUE_A;
 	pmemobj_tx_commit();
@@ -225,7 +228,9 @@ do_test_abort_delete_single_transaction(PMEMobjpool *pop) {
 	assert(*ptr_test == TEST_VALUE_A);
 }
 
-void do_test_abort_inner_transactions(PMEMobjpool *pop) {
+void
+do_test_abort_inner_transactions(PMEMobjpool *pop)
+{
 	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
 	jmp_buf env;
 
@@ -234,19 +239,19 @@ void do_test_abort_inner_transactions(PMEMobjpool *pop) {
 		return;
 	}
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
-	bp->test = pmemobj_alloc(sizeof(int));
+	bp->test = pmemobj_alloc(sizeof (int));
 	int *ptr_test = pmemobj_direct(bp->test);
 	*ptr_test = 0;
 	pmemobj_tx_commit();
 
 	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
 	int a = TEST_VALUE_A;
-	pmemobj_memcpy(ptr_test, &a, sizeof(int));
+	pmemobj_memcpy(ptr_test, &a, sizeof (int));
 
 	pmemobj_tx_begin(pop, env);
 	{
 		int b = TEST_VALUE_B;
-		pmemobj_memcpy(ptr_test, &b, sizeof(int));
+		pmemobj_memcpy(ptr_test, &b, sizeof (int));
 	}
 	pmemobj_tx_abort(0);
 
@@ -257,7 +262,8 @@ void do_test_abort_inner_transactions(PMEMobjpool *pop) {
 	pmemobj_tx_commit();
 }
 
-int main(int argc, char** argv)
+int
+main(int argc, char **argv)
 {
 	START(argc, argv, "obj_basic");
 
@@ -281,4 +287,3 @@ int main(int argc, char** argv)
 
 	DONE(NULL);
 }
-
