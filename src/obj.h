@@ -52,7 +52,9 @@ struct pmemobjpool {
 
 	/* for the fake implementation... */
 	PMEMmutex rootlock;
-	void *rootdirect;
+	PMEMoid root;
+
+	struct allocator_hdr allocator;
 };
 
 /* alignment of every object */
