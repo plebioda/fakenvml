@@ -37,6 +37,29 @@ do_test_alloc_single_transaction(PMEMobjpool *pop)
 }
 
 void
+do_test_alloc_huge_single_transaction(PMEMobjpool *pop)
+{
+	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
+	jmp_buf env;
+
+	if (setjmp(env)) {
+		code_not_reached();
+		return;
+	}
+
+	pmemobj_tx_begin_lock(pop, env, &bp->mutex);
+
+	bp->test = pmemobj_alloc(20 * 1024 * 1024); /* 20MB */
+	int *ptr_test = pmemobj_direct(bp->test);
+	*ptr_test = TEST_VALUE_A;
+
+	pmemobj_tx_commit();
+
+	ptr_test = pmemobj_direct(bp->test);
+	assert(*ptr_test == TEST_VALUE_A);
+}
+
+void
 do_test_set_single_transaction(PMEMobjpool *pop)
 {
 	struct base *bp = pmemobj_root_direct(pop, sizeof (*bp));
@@ -273,6 +296,7 @@ main(int argc, char **argv)
 	PMEMobjpool *pop = pmemobj_pool_open(argv[1]);
 
 	do_test_alloc_single_transaction(pop);
+	do_test_alloc_huge_single_transaction(pop);
 	do_test_set_single_transaction(pop);
 	do_test_delete_single_transaction(pop);
 	do_test_combine_two_transactions(pop);
