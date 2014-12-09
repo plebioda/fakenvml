@@ -227,7 +227,7 @@ pmemobj_pool_open(const char *path)
 	pop->addr = addr;
 	pop->size = stbuf.st_size;
 
-	allocator_init(&pop->allocator, sizeof(struct pmemobjpool), is_pmem);
+	allocator_init(&pop->allocator, sizeof (struct pmemobjpool), is_pmem);
 
 	/*
 	 * If possible, turn off all permissions on the pool header page.
