@@ -783,7 +783,8 @@ pmemobj_tx_action_tid(PMEMtid tid, pmemobj_txop_onaction_t *actions)
 		free(Curthread_txinfop);
 		Curthread_txinfop = NULL;
 	} else {
-		tx->tail->prev = tx->next->tail;
+		tx->head->prev = tx->next->tail;
+		tx->next->tail->next = tx->head;
 		tx->next->tail = tx->tail;
 		Curthread_txinfop->txp = tx->next;
 		free(tx);
