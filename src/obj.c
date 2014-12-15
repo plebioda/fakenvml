@@ -1130,8 +1130,8 @@ pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 {
 	void *old = malloc(size);
 	memcpy(old, dstp, size);
-	memcpy(dstp, srcp, size);
 	pmemobj_log_add_set(tid, dstp, old, size);
+	memcpy(dstp, srcp, size);
 	return 0;
 }
 
