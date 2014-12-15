@@ -1065,8 +1065,14 @@ pmemobj_aligned_alloc_tid(PMEMtid tid, size_t alignment, size_t size)
 PMEMoid
 pmemobj_strdup_tid(PMEMtid tid, const char *s)
 {
+	struct tx *tx = (struct tx *)tid;
+	size_t size = strlen(s) + 1;
 	PMEMoid n = { 0 };
 
+	n.pool = (uint64_t)tx->pool->addr;
+	pmalloc(&(tx->pool->allocator), &(n.off), size);
+	strncpy((char *)(n.pool + n.off), s, size);
+	pmemobj_log_add_alloc(tid, (void*)n.off);
 	return n;
 }
 
