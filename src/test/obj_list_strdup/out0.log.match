@@ -1,0 +1,10 @@
+obj_list_strdup/TEST0: START: obj_list_strdup
+ ./obj_list_strdup$(*) $(*)/testfile1 one two three
+value "one" inserted
+value "two" inserted
+value "three" inserted
+list contains:
+    value "three"
+    value "two"
+    value "one"
+obj_list_strdup/TEST0: Done
