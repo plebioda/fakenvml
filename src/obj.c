@@ -873,11 +873,12 @@ pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 }
 
 static struct txop *
-pmemobj_log_prepare_alloc(uint64_t addr)
+pmemobj_log_prepare_alloc(uint64_t **addrpp)
 {
 	struct txop *txop = zalloc(sizeof (struct txop));
-	txop->args.alloc.addr = addr;
+	txop->args.alloc.addr = 0;
 	txop->op = TXOP_ALLOC;
+	*addrpp = &(txop->args.alloc.addr);
 	return txop;
 }
 
@@ -915,9 +916,9 @@ pmemobj_log_add(PMEMtid tid, struct txop *txop)
 }
 
 static void
-pmemobj_log_add_alloc(PMEMtid tid, uint64_t addr)
+pmemobj_log_add_alloc(PMEMtid tid, uint64_t **addrpp)
 {
-	struct txop *txop = pmemobj_log_prepare_alloc(addr);
+	struct txop *txop = pmemobj_log_prepare_alloc(addrpp);
 	if (txop) {
 		pmemobj_log_add(tid, txop);
 	}
@@ -1017,9 +1018,12 @@ pmemobj_alloc_tid(PMEMtid tid, size_t size)
 {
 	struct tx *tx = (struct tx *)tid;
 	PMEMoid n = { 0 };
+	uint64_t *ptrp;
+
 	n.pool = (uint64_t)tx->pool->addr;
-	pmalloc(&(tx->pool->allocator), &(n.off), size);
-	pmemobj_log_add_alloc(tid, n.off);
+	pmemobj_log_add_alloc(tid, &ptrp);
+	pmalloc(&(tx->pool->allocator), ptrp, size);
+	n.off = *ptrp;
 	return n;
 }
 
@@ -1031,10 +1035,13 @@ pmemobj_zalloc_tid(PMEMtid tid, size_t size)
 {
 	struct tx *tx = (struct tx *)tid;
 	PMEMoid n = { 0 };
+	uint64_t *ptrp;
+
 	n.pool = (uint64_t)tx->pool->addr;
-	pmalloc(&(tx->pool->allocator), &(n.off), size);
+	pmemobj_log_add_alloc(tid, &ptrp);
+	pmalloc(&(tx->pool->allocator), ptrp, size);
+	n.off = *ptrp;
 	memset((void *)(n.pool + n.off), 0, size);
-	pmemobj_log_add_alloc(tid, n.off);
 	return n;
 }
 
@@ -1069,11 +1076,13 @@ pmemobj_strdup_tid(PMEMtid tid, const char *s)
 	struct tx *tx = (struct tx *)tid;
 	size_t size = strlen(s) + 1;
 	PMEMoid n = { 0 };
+	uint64_t *ptrp;
 
 	n.pool = (uint64_t)tx->pool->addr;
-	pmalloc(&(tx->pool->allocator), &(n.off), size);
+	pmemobj_log_add_alloc(tid, &ptrp);
+	pmalloc(&(tx->pool->allocator), ptrp, size);
+	n.off = *ptrp;
 	strncpy((char *)(n.pool + n.off), s, size);
-	pmemobj_log_add_alloc(tid, n.off);
 	return n;
 }
 
@@ -1136,14 +1145,14 @@ int
 pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 {
 	struct tx *tx = (struct tx *)tid;
-	uint64_t base, old;
+	uint64_t base, *oldp;
 
-	pmalloc(&(tx->pool->allocator), &old, size);
-	pmemobj_log_add_alloc(tid, old);
+	pmemobj_log_add_alloc(tid, &oldp);
+	pmalloc(&(tx->pool->allocator), oldp, size);
 
 	base = (uint64_t)tx->pool->addr;
-	memcpy((void *)(base + old), dstp, size);
-	pmemobj_log_add_set(tid, dstp, old, size);
+	memcpy((void *)(base + *oldp), dstp, size);
+	pmemobj_log_add_set(tid, dstp, *oldp, size);
 	memcpy(dstp, srcp, size);
 	return 0;
 }
