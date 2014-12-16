@@ -825,26 +825,26 @@ pmemobj_tx_commit_multiv(PMEMtid tids[])
 }
 
 void
-pmemobj_txop_alloc_onabort(struct tx *txp, union txop_args args)
+pmemobj_txop_onabort_alloc(struct tx *txp, union txop_args args)
 {
 	pfree(&(txp->pool->allocator), (uint64_t)args.alloc.addr);
 }
 
 void
-pmemobj_txop_free_onabort(struct tx *txp, union txop_args args)
+pmemobj_txop_onabort_free(struct tx *txp, union txop_args args)
 {
 }
 
 void
-pmemobj_txop_set_onabort(struct tx *txp, union txop_args args)
+pmemobj_txop_onabort_set(struct tx *txp, union txop_args args)
 {
 	memcpy(args.set.addr, args.set.data, args.set.len);
 }
 
 pmemobj_txop_onaction_t onabort_funcs[] = {
-	pmemobj_txop_alloc_onabort,
-	pmemobj_txop_free_onabort,
-	pmemobj_txop_set_onabort
+	pmemobj_txop_onabort_alloc,
+	pmemobj_txop_onabort_free,
+	pmemobj_txop_onabort_set
 };
 
 /*
