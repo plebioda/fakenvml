@@ -83,10 +83,10 @@ struct tx {
 		void *prev;
 		union txop_args {
 			struct {
-				void *addr;
+				uint64_t addr;
 			} alloc;
 			struct {
-				void *addr;
+				uint64_t addr;
 			} free;
 			struct {
 				void *addr;
@@ -755,7 +755,7 @@ pmemobj_txop_oncommit_alloc(struct tx *txp, union txop_args args)
 void
 pmemobj_txop_oncommit_free(struct tx *txp, union txop_args args)
 {
-	pfree(&(txp->pool->allocator), (uint64_t)args.free.addr);
+	pfree(&(txp->pool->allocator), args.free.addr);
 }
 
 void
@@ -827,7 +827,7 @@ pmemobj_tx_commit_multiv(PMEMtid tids[])
 void
 pmemobj_txop_alloc_onabort(struct tx *txp, union txop_args args)
 {
-	pfree(&(txp->pool->allocator), (uint64_t)args.alloc.addr);
+	pfree(&(txp->pool->allocator), args.alloc.addr);
 }
 
 void
@@ -872,7 +872,7 @@ pmemobj_tx_abort_tid(PMEMtid tid, int errnum)
 }
 
 static struct txop *
-pmemobj_log_prepare_alloc(void *addr)
+pmemobj_log_prepare_alloc(uint64_t addr)
 {
 	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.alloc.addr = addr;
@@ -881,7 +881,7 @@ pmemobj_log_prepare_alloc(void *addr)
 }
 
 static struct txop *
-pmemobj_log_prepare_free(void *addr)
+pmemobj_log_prepare_free(uint64_t addr)
 {
 	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.free.addr = addr;
@@ -914,7 +914,7 @@ pmemobj_log_add(PMEMtid tid, struct txop *txop)
 }
 
 static void
-pmemobj_log_add_alloc(PMEMtid tid, void *addr)
+pmemobj_log_add_alloc(PMEMtid tid, uint64_t addr)
 {
 	struct txop *txop = pmemobj_log_prepare_alloc(addr);
 	if (txop) {
@@ -923,7 +923,7 @@ pmemobj_log_add_alloc(PMEMtid tid, void *addr)
 }
 
 static void
-pmemobj_log_add_free(PMEMtid tid, void *addr)
+pmemobj_log_add_free(PMEMtid tid, uint64_t addr)
 {
 	struct txop *txop = pmemobj_log_prepare_free(addr);
 	if (txop) {
@@ -1018,7 +1018,7 @@ pmemobj_alloc_tid(PMEMtid tid, size_t size)
 	PMEMoid n = { 0 };
 	n.pool = (uint64_t)tx->pool->addr;
 	pmalloc(&(tx->pool->allocator), &(n.off), size);
-	pmemobj_log_add_alloc(tid, (void*)n.off);
+	pmemobj_log_add_alloc(tid, n.off);
 	return n;
 }
 
@@ -1033,7 +1033,7 @@ pmemobj_zalloc_tid(PMEMtid tid, size_t size)
 	n.pool = (uint64_t)tx->pool->addr;
 	pmalloc(&(tx->pool->allocator), &(n.off), size);
 	memset((void *)(n.pool + n.off), 0, size);
-	pmemobj_log_add_alloc(tid, (void*)n.off);
+	pmemobj_log_add_alloc(tid, n.off);
 	return n;
 }
 
@@ -1072,7 +1072,7 @@ pmemobj_strdup_tid(PMEMtid tid, const char *s)
 	n.pool = (uint64_t)tx->pool->addr;
 	pmalloc(&(tx->pool->allocator), &(n.off), size);
 	strncpy((char *)(n.pool + n.off), s, size);
-	pmemobj_log_add_alloc(tid, (void*)n.off);
+	pmemobj_log_add_alloc(tid, n.off);
 	return n;
 }
 
@@ -1082,7 +1082,7 @@ pmemobj_strdup_tid(PMEMtid tid, const char *s)
 int
 pmemobj_free_tid(PMEMtid tid, PMEMoid oid)
 {
-	pmemobj_log_add_free(tid, (void*)oid.off);
+	pmemobj_log_add_free(tid, oid.off);
 	return 0;
 }
 
