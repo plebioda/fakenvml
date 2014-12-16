@@ -90,7 +90,7 @@ struct tx {
 			} free;
 			struct {
 				void *addr;
-				void *data;
+				uint64_t data;
 				size_t len;
 			} set;
 		} args;
@@ -761,7 +761,7 @@ pmemobj_txop_oncommit_free(struct tx *txp, union txop_args args)
 void
 pmemobj_txop_oncommit_set(struct tx *txp, union txop_args args)
 {
-	free(args.set.data);
+	pfree(&(txp->pool->allocator), args.set.data);
 }
 
 pmemobj_txop_onaction_t oncommit_funcs[] = {
@@ -838,7 +838,8 @@ pmemobj_txop_free_onabort(struct tx *txp, union txop_args args)
 void
 pmemobj_txop_set_onabort(struct tx *txp, union txop_args args)
 {
-	memcpy(args.set.addr, args.set.data, args.set.len);
+	uint64_t base = (uint64_t)txp->pool->addr;
+	memcpy(args.set.addr, (void *)(base + args.set.data), args.set.len);
 }
 
 pmemobj_txop_onaction_t onabort_funcs[] = {
@@ -890,7 +891,7 @@ pmemobj_log_prepare_free(uint64_t addr)
 }
 
 static struct txop *
-pmemobj_log_prepare_set(void *addr, void *data, size_t len)
+pmemobj_log_prepare_set(void *addr, uint64_t data, size_t len)
 {
 	struct txop *txop = zalloc(sizeof (struct txop));
 	txop->args.set.addr = addr;
@@ -932,7 +933,7 @@ pmemobj_log_add_free(PMEMtid tid, uint64_t addr)
 }
 
 static void
-pmemobj_log_add_set(PMEMtid tid, void *addr, void *data, size_t len)
+pmemobj_log_add_set(PMEMtid tid, void *addr, uint64_t data, size_t len)
 {
 	struct txop *txop = pmemobj_log_prepare_set(addr, data, len);
 	if (txop) {
@@ -1134,8 +1135,14 @@ pmemobj_memcpy(void *dstp, void *srcp, size_t size)
 int
 pmemobj_memcpy_tid(PMEMtid tid, void *dstp, void *srcp, size_t size)
 {
-	void *old = malloc(size);
-	memcpy(old, dstp, size);
+	struct tx *tx = (struct tx *)tid;
+	uint64_t base, old;
+
+	pmalloc(&(tx->pool->allocator), &old, size);
+	pmemobj_log_add_alloc(tid, old);
+
+	base = (uint64_t)tx->pool->addr;
+	memcpy((void *)(base + old), dstp, size);
 	pmemobj_log_add_set(tid, dstp, old, size);
 	memcpy(dstp, srcp, size);
 	return 0;
