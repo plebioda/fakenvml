@@ -86,7 +86,7 @@ $(LIBPMEM_SONAME): $(LIBPMEM_REALNAME)
 	$(LN) -sf $< $@
 
 $(LIBPMEMSO): $(LIBPMEM_SONAME)
-	$(LN) -s $< $@
+	$(LN) -sf $< $@
 
 
 .c.o:
